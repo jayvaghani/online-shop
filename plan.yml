@@ -1,0 +1,25 @@
+# This file is used to plan the design and deployment infrastructure of online shop.
+
+# Acceptance Criteria
+- An AppSync GraphQL API for managing products stored in a MySQL database.
+- Proper usage of TypeScript features, such as types, classes, and modules.
+- A well-organized folder structure and codebase.
+
+# Technologies
+- AWS
+- CDK
+- TypeScript
+- Node.js
+- AppSync
+- DynamoDB
+- Lambda
+- API Gateway
+- Step Functions
+- Event Bus
+
+
+
+# API
+
+# Frontend
+

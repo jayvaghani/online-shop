@@ -1,0 +1,89 @@
+# Entities
+
+ProductCategory
+- Id: Integer
+- Name: String
+- Description: String
+
+Product
+- Id: Integer
+- Name: String
+- Description: String
+- Price: BigDecimal
+- Weight: Double
+- Category: ProductCategory
+- Supplier: Supplier
+- ImageUrl: String
+
+Supplier
+- Id: Integer
+- Name: String
+
+Stock
+- Product: Product
+- Location: Location
+- Quantity: Integer
+
+Location
+- Id: Integer
+- Name: String
+- Address.Country: String
+- Address.City: String
+- Address.County: String
+- Address.StreetAddress: String
+
+OrderDetail
+- Order: Order
+- Product: Product
+- Quantity: Integer
+
+Order
+- Id: Integer
+- ShippedFrom: Location
+- Customer: Customer
+- CreatedAt: LocalDateTime
+- Address.Country: String
+- Address.City: String
+- Address.County: String
+- Address.StreetAddress: String
+
+Customer
+- Id: Integer
+- FirstName: String
+- LastName: String
+- Username: String
+- Password: String
+- EmailAddress: String
+
+Revenue
+- Id: Integer
+- Location: Location
+- Date: LocalDate
+- Sum: BigDecimal
+
+
+# Relations
+Relationships
+- ProductCategory has many Products
+- product has one category
+- supplier has many products
+- Product has one Supplier
+- Product has many Stock
+- Stock has one Product
+- Product has many OrderDetails
+- OrderDetails has one Product
+- Stock has one Location
+- Location has many Stock
+- Order has many OrderDetails
+- OrderDetails has one Order
+- Location has many Orders
+- Order has one Location
+- Order has one Customer
+- Customer has many Orders
+- Revenue has one Location
+- Location has many Revenues
+
+
+ Note: Disregard the Locations, Stocks and Suppliers entities for this training. Assume our shop operates from a single location with an unlimited stock of products, all coming from the same supplier.
+
+
