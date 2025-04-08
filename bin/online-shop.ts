@@ -2,9 +2,11 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { OnlineShopStack } from '../lib/online-shop-stack';
-
+import { getOwner, getStackName } from '../lib/utils/environment';
 const app = new cdk.App();
-new OnlineShopStack(app, 'OnlineShopStack', {
+
+const owner = getOwner()
+new OnlineShopStack(app, getStackName(owner), {
   /* If you don't specify 'env', this stack will be environment-agnostic.
    * Account/Region-dependent features and context lookups will not work,
    * but a single synthesized template can be deployed anywhere. */
@@ -15,6 +17,7 @@ new OnlineShopStack(app, 'OnlineShopStack', {
     account: process.env.CDK_DEFAULT_ACCOUNT, 
     region: process.env.CDK_DEFAULT_REGION 
   },
+  owner,
 
   /* Uncomment the next line if you know exactly what Account and Region you
    * want to deploy the stack to. */
