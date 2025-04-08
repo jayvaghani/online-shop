@@ -3,6 +3,7 @@ import { BaseEntity } from './base.entity';
 export class OrderDetail extends BaseEntity {
   orderId: string;
   productId: string;
+  productName: string;
   quantity: number;
   unitPrice: number;
   totalPrice: number;
@@ -11,6 +12,7 @@ export class OrderDetail extends BaseEntity {
     id: string,
     orderId: string,
     productId: string,
+    productName: string,
     quantity: number,
     unitPrice: number
   ) {
@@ -23,6 +25,7 @@ export class OrderDetail extends BaseEntity {
     super(id, `ORDER#${orderId}`, `ORDERDETAIL#${id}`, 'ORDER_DETAIL');
     this.orderId = orderId;
     this.productId = productId;
+    this.productName = productName;
     this.quantity = quantity;
     this.unitPrice = unitPrice;
     this.totalPrice = quantity * unitPrice;

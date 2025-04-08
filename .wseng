@@ -1,0 +1,7 @@
+{
+    "contextFolder": ".context",
+    "specs": [],
+    "pullRequestTemplate": "{{ ticketUrl }}",
+    "commandConfigurations": {},
+    "demoFolder": "~/Videos/Demos"
+}

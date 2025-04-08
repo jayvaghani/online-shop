@@ -84,6 +84,15 @@ Relationships
 - Location has many Revenues
 
 
+# Queries
+ - Fetch all categories,
+ - Retrieve a specific category using its ID,
+ - List all products under a specific category (passed by ID),
+ - Obtain details of a product via its ID,
+ - Add a new product under a specified category using the category ID,
+ - Modify product details using its ID,
+ - Remove a product using its ID.
+
  Note: Disregard the Locations, Stocks and Suppliers entities for this training. Assume our shop operates from a single location with an unlimited stock of products, all coming from the same supplier.
 
 
