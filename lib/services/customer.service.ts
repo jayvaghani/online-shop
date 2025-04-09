@@ -1,132 +1,76 @@
-import { BaseService } from './base.service';
 import { Customer } from '../entities/customer.entity';
 import { CustomerRepository } from '../repositories/customer.repository';
-import { OrderRepository } from '../repositories/order.repository';
+import { ValidationError } from '../errors/validation.error';
+import { NotFoundError } from '../errors/not-found.error';
+import { ConflictError } from '../errors/conflict.error';
+import { validateInput, CreateCustomerSchema, UpdateCustomerSchema } from '../validation/schemas';
 
-export class CustomerService extends BaseService<Customer> {
-  private orderRepository: OrderRepository;
+export class CustomerService {
+  private customerRepository: CustomerRepository;
 
   constructor(
-    repository: CustomerRepository,
-    orderRepository: OrderRepository
+    customerRepository: CustomerRepository = new CustomerRepository()
   ) {
-    super(repository);
-    this.orderRepository = orderRepository;
+    this.customerRepository = customerRepository;
   }
 
-  async findByUsername(username: string): Promise<Customer | null> {
-    return (this.repository as CustomerRepository).findByUsername(username);
+  async getCustomerById(id: string): Promise<Customer | null> {
+    return this.customerRepository.getCustomerById(id);
   }
 
-  async findByEmail(email: string): Promise<Customer | null> {
-    return (this.repository as CustomerRepository).findByEmail(email);
+  async getCustomerByEmail(email: string): Promise<Customer | null> {
+    if (!email) {
+        throw new ValidationError('Email is required');
+    }
+    return this.customerRepository.getCustomerByEmail(email);
+  }
+  
+  async listCustomers(limit?: number, nextToken?: string): Promise<{ items: Customer[]; nextToken: string | null }> {
+    return this.customerRepository.listCustomers(limit, nextToken);
   }
 
-  async findAllCustomers(): Promise<Customer[]> {
-    return (this.repository as CustomerRepository).findAllCustomers();
+  async createCustomer(rawInput: unknown): Promise<Customer> {
+    const input = validateInput(CreateCustomerSchema, rawInput);
+    const { name, email, address } = input;
+
+    const existingCustomer = await this.customerRepository.getCustomerByEmail(email);
+    if (existingCustomer) {
+      throw new ConflictError(`Customer with email ${email} already exists.`);
+    }
+
+    const newCustomer = new Customer(null, name, email, address);
+    return this.customerRepository.createCustomer(newCustomer);
   }
 
-  async getCustomerWithOrders(customerId: string): Promise<{
-    customer: Customer | null;
-    orders: any[];
-  }> {
-    const customer = await this.findById(customerId);
-    if (!customer) {
-      return { customer: null, orders: [] };
+  async updateCustomer(rawInput: unknown): Promise<Customer | null> {
+    const input = validateInput(UpdateCustomerSchema, rawInput);
+    const { id, email, ...updates } = input;
+
+    const currentCustomer = await this.customerRepository.getCustomerById(id);
+    if (!currentCustomer) {
+        throw new NotFoundError(`Customer with ID ${id} not found`);
     }
 
-    const orders = await this.orderRepository.findByCustomer(customerId);
-    return { customer, orders };
+    if (email && email !== currentCustomer.email) {
+        const existingByEmail = await this.customerRepository.getCustomerByEmail(email);
+        if (existingByEmail && existingByEmail.id !== id) { 
+            throw new ConflictError(`Another customer with email ${email} already exists.`);
+        }
+    }
+
+    const updateData: Partial<Omit<Customer, 'id' | 'PK' | 'SK' | 'type'>> = {};
+    if (updates.name !== undefined) updateData.name = updates.name;
+    if (email !== undefined) updateData.email = email; 
+    if (updates.address !== undefined) updateData.address = updates.address;
+
+    return this.customerRepository.updateCustomer(id, updateData);
   }
 
-  async createCustomer(
-    firstName: string,
-    lastName: string,
-    username: string,
-    password: string,
-    emailAddress: string
-  ): Promise<Customer> {
-    // Check if username already exists
-    const existingUsername = await this.findByUsername(username);
-    if (existingUsername) {
-      throw new Error(`Username '${username}' is already taken`);
+  async deleteCustomer(id: string): Promise<boolean> {
+    const customerExists = await this.customerRepository.getCustomerById(id);
+    if (!customerExists) {
+        return true; // Idempotent
     }
-
-    // Check if email already exists
-    const existingEmail = await this.findByEmail(emailAddress);
-    if (existingEmail) {
-      throw new Error(`Email '${emailAddress}' is already registered`);
-    }
-
-    // Generate a new ID (in a real app, this would be handled by a proper ID generator)
-    const id = Date.now().toString();
-    
-    // In a real app, we would hash the password before storing it
-    const customer = new Customer(id, firstName, lastName, username, password, emailAddress);
-    return this.save(customer);
-  }
-
-  async updateCustomer(
-    id: string,
-    firstName: string,
-    lastName: string,
-    username: string,
-    emailAddress: string
-  ): Promise<Customer> {
-    const customer = await this.findById(id);
-    if (!customer) {
-      throw new Error(`Customer with ID '${id}' not found`);
-    }
-
-    // Check if the new username conflicts with an existing customer
-    if (username !== customer.username) {
-      const existingUsername = await this.findByUsername(username);
-      if (existingUsername) {
-        throw new Error(`Username '${username}' is already taken`);
-      }
-    }
-
-    // Check if the new email conflicts with an existing customer
-    if (emailAddress !== customer.emailAddress) {
-      const existingEmail = await this.findByEmail(emailAddress);
-      if (existingEmail) {
-        throw new Error(`Email '${emailAddress}' is already registered`);
-      }
-    }
-
-    // Create a new customer with updated fields, keeping the original password
-    const updatedCustomer = new Customer(
-      id,
-      firstName,
-      lastName,
-      username,
-      customer.password,
-      emailAddress
-    );
-    return this.save(updatedCustomer);
-  }
-
-  async changePassword(id: string, currentPassword: string, newPassword: string): Promise<boolean> {
-    const customer = await this.findById(id);
-    if (!customer) {
-      throw new Error(`Customer with ID '${id}' not found`);
-    }
-
-    // In a real app, we would compare hashed passwords
-    if (currentPassword !== customer.password) {
-      throw new Error('Current password is incorrect');
-    }
-
-    // Create a new customer with the updated password
-    const updatedCustomer = new Customer(
-      id,
-      customer.firstName,
-      customer.lastName,
-      customer.username,
-      newPassword,
-      customer.emailAddress
-    );
-    await this.save(updatedCustomer);
-    return true;
+    return this.customerRepository.deleteCustomer(id);
   }
 } 

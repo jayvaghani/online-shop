@@ -1,53 +1,43 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { AppSyncEvent } from '../types/appsync';
+import { Product } from '../entities/product.entity';
 import { ProductService } from '../services/product.service';
-import { ProductRepository } from '../repositories/product.repository';
-import { ProductCategoryRepository } from '../repositories/product-category.repository';
-import * as path from 'path';
+import { Logger } from '@aws-lambda-powertools/logger';
+import type { Context } from 'aws-lambda';
 
-export const getProductsByCategory = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+const productService = new ProductService();
+const logger = new Logger({ serviceName: 'getProductsByCategoryLambda' });
+
+interface GetProductsByCategoryArgs {
+  categoryId: string;
+  limit?: number;
+  nextToken?: string;
+}
+
+export const getProductsByCategory = async (
+  event: AppSyncEvent<GetProductsByCategoryArgs>,
+  context: Context
+): Promise<{ items: Product[]; nextToken: string | null }> => {
+  logger.addContext(context);
+  logger.info('Received request for getProductsByCategory', { args: event.arguments });
+
   try {
-    // Extract category ID from path parameters
-    const categoryId = event.pathParameters?.id;
-    
+    const { categoryId, limit, nextToken } = event.arguments;
     if (!categoryId) {
-      return {
-        statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: 'Category ID is required' }),
-      };
+      logger.warn('Missing Category ID argument');
+      throw new Error('Category ID is required');
     }
-    
-    // Initialize repositories
-    const productRepository = new ProductRepository();
-    const categoryRepository = new ProductCategoryRepository();
-    
-    // Initialize service with dependencies
-    const productService = new ProductService(productRepository, categoryRepository);
-    
-    // Call service method
-    const products = await productService.findByCategory(categoryId);
-    
-    // Return response
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(products),
-    };
-  } catch (error) {
-    console.error('Error fetching products by category:', error);
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ message: 'Internal server error' }),
-    };
+    const result = await productService.getProductsByCategory(categoryId, limit, nextToken);
+    logger.info('Successfully fetched products by category', { categoryId, itemCount: result.items.length, hasNextToken: !!result.nextToken });
+    return result;
+  } catch (error: any) {
+    logger.error('Error processing getProductsByCategory request', { 
+        errorName: error.name,
+        errorMessage: error.message,
+        errorStack: error.stack, 
+        eventArguments: event.arguments 
+    });
+    throw error;
   }
 };
 
-// Add path property to the function
-getProductsByCategory.path = __filename; 
+getProductsByCategory.path = __filename;

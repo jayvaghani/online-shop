@@ -1,4 +1,5 @@
 import { BaseEntity } from './base.entity';
+import * as uuid from 'uuid';
 
 export class OrderDetail extends BaseEntity {
   orderId: string;

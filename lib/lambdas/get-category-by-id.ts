@@ -1,63 +1,43 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { AppSyncEvent } from '../types/appsync';
+import { ProductCategory } from '../entities/product-category.entity';
 import { ProductCategoryService } from '../services/product-category.service';
-import { ProductCategoryRepository } from '../repositories/product-category.repository';
-import { ProductRepository } from '../repositories/product.repository';
-import * as path from 'path';
+import { Logger } from '@aws-lambda-powertools/logger';
+import type { Context } from 'aws-lambda';
 
-export const getCategoryById = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+const categoryService = new ProductCategoryService();
+const logger = new Logger({ serviceName: 'getCategoryByIdLambda' });
+
+interface GetCategoryByIdArgs {
+  id: string;
+}
+
+// For queries returning a single object or null, the resolver should return that object or null directly.
+export const getCategoryById = async (
+  event: AppSyncEvent<GetCategoryByIdArgs>,
+  context: Context
+): Promise<ProductCategory | null> => {
+  logger.addContext(context);
+  logger.info('Received request for getCategoryById', { args: event.arguments });
+
   try {
-    // Extract category ID from path parameters
-    const categoryId = event.pathParameters?.id;
-    
-    if (!categoryId) {
-      return {
-        statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: 'Category ID is required' }),
-      };
+    const { id } = event.arguments;
+    if (!id) {
+      logger.warn('Missing Category ID argument');
+      // Input validation should ideally happen before the service call
+      throw new Error('Category ID is required'); 
     }
-    
-    // Initialize repositories
-    const categoryRepository = new ProductCategoryRepository();
-    const productRepository = new ProductRepository();
-    
-    // Initialize service with dependencies
-    const categoryService = new ProductCategoryService(categoryRepository, productRepository);
-    
-    // Call service method
-    const category = await categoryService.findById(categoryId);
-    
-    if (!category) {
-      return {
-        statusCode: 404,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: 'Category not found' }),
-      };
-    }
-    
-    // Return response
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(category),
-    };
-  } catch (error) {
-    console.error('Error fetching category:', error);
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ message: 'Internal server error' }),
-    };
+    const result = await categoryService.getCategoryById(id);
+    logger.info('Successfully fetched category by ID', { categoryId: id, found: !!result });
+    return result;
+  } catch (error: any) {
+    logger.error('Error processing getCategoryById request', { 
+        errorName: error.name,
+        errorMessage: error.message,
+        errorStack: error.stack, 
+        eventArguments: event.arguments 
+    });
+    throw error; // Let AppSync handle error mapping
   }
 };
 
-// Add path property to the function
 getCategoryById.path = __filename; 

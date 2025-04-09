@@ -1,40 +1,72 @@
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { 
+  DynamoDBDocumentClient, 
+  PutCommand, 
+  GetCommand, 
+  QueryCommand, 
+  UpdateCommand, 
+  DeleteCommand,
+  PutCommandInput,
+  GetCommandInput,
+  QueryCommandInput,
+  UpdateCommandInput,
+  DeleteCommandInput
+} from "@aws-sdk/lib-dynamodb";
 import { BaseEntity } from '../entities/base.entity';
 
 export abstract class BaseRepository<T extends BaseEntity> {
-  protected items: Map<string, T> = new Map();
+  protected readonly client: DynamoDBDocumentClient;
+  protected readonly tableName: string;
 
-  async findById(id: string): Promise<T | null> {
-    return this.items.get(id) || null;
+  constructor(tableName: string) {
+    const ddbClient = new DynamoDBClient({}); // Configure region if needed
+    this.client = DynamoDBDocumentClient.from(ddbClient);
+    this.tableName = tableName;
   }
 
-  async findAll(): Promise<T[]> {
-    return Array.from(this.items.values());
-  }
-
-  async save(item: T): Promise<T> {
-    this.items.set(item.id, item);
+  protected async putItem(item: T): Promise<T> {
+    const params: PutCommandInput = {
+      TableName: this.tableName,
+      Item: item,
+    };
+    await this.client.send(new PutCommand(params));
     return item;
   }
 
-  async delete(id: string): Promise<boolean> {
-    return this.items.delete(id);
+  protected async getItem(PK: string, SK: string): Promise<T | null> {
+    const params: GetCommandInput = {
+      TableName: this.tableName,
+      Key: { PK, SK },
+    };
+    const result = await this.client.send(new GetCommand(params));
+    return result.Item as T | null;
   }
 
-  async findByPKAndSK(PK: string, SK: string): Promise<T | null> {
-    return Array.from(this.items.values()).find(
-      item => item.PK === PK && item.SK === SK
-    ) || null;
+  protected async query(params: QueryCommandInput): Promise<T[]> {
+    const result = await this.client.send(new QueryCommand(params));
+    return (result.Items as T[]) || [];
   }
+  
+  protected async updateItem(PK: string, SK: string, updateExpression: string, expressionAttributeValues: Record<string, any>, expressionAttributeNames?: Record<string, string>): Promise<T | null> {
+    const params: UpdateCommandInput = {
+        TableName: this.tableName,
+        Key: { PK, SK },
+        UpdateExpression: updateExpression,
+        ExpressionAttributeValues: expressionAttributeValues,
+        ExpressionAttributeNames: expressionAttributeNames,
+        ReturnValues: "ALL_NEW" // Or "ALL_NEW" if you need the full item
+    };
+    const result = await this.client.send(new UpdateCommand(params));
+    return result.Attributes as T | null;
+}
 
-  async findByGSI1(GSI1PK: string, GSI1SK: string): Promise<T[]> {
-    return Array.from(this.items.values()).filter(
-      item => item.GSI1PK === GSI1PK && item.GSI1SK === GSI1SK
-    );
-  }
 
-  async findByGSI2(GSI2PK: string, GSI2SK: string): Promise<T[]> {
-    return Array.from(this.items.values()).filter(
-      item => item.GSI2PK === GSI2PK && item.GSI2SK === GSI2SK
-    );
+  protected async deleteItem(PK: string, SK: string): Promise<boolean> {
+    const params: DeleteCommandInput = {
+      TableName: this.tableName,
+      Key: { PK, SK },
+    };
+    await this.client.send(new DeleteCommand(params));
+    return true;
   }
 } 

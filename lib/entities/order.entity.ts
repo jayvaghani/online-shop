@@ -1,40 +1,43 @@
 import { BaseEntity } from './base.entity';
+import * as uuid from 'uuid';
+
+export enum OrderStatus {
+  PENDING = 'PENDING',
+  PROCESSING = 'PROCESSING',
+  SHIPPED = 'SHIPPED',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED',
+}
 
 export class Order extends BaseEntity {
   customerId: string;
-  country: string;
-  city: string;
-  county: string;
-  streetAddress: string;
+  orderDate: string; // ISO 8601 format
+  status: OrderStatus;
   totalAmount: number;
-  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+  // shippingAddress: string; // Could add more details
 
   constructor(
-    id: string,
+    id: string | null,
     customerId: string,
-    country: string,
-    city: string,
-    county: string,
-    streetAddress: string,
-    totalAmount: number
+    totalAmount: number,
+    status: OrderStatus = OrderStatus.PENDING
   ) {
-    // PK: CUST#<customerId> - For querying orders by customer
-    // SK: ORDER#<id> - For unique order identification
-    // GSI1PK: ORDER - For listing all orders
-    // GSI1SK: <createdAt> - For sorting orders by date
-    // GSI2PK: ORDER#<id> - For direct order access
-    // GSI2SK: METADATA - Fixed value for direct access
-    super(id, `CUST#${customerId}`, `ORDER#${id}`, 'ORDER');
+    const orderId = id || uuid.v4();
+    const orderDate = new Date().toISOString();
+    // PK: CUST#<customerId>
+    // SK: ORDER#<orderId> (Allows querying orders for a customer)
+    // GSI1PK: ORDER (To list all orders, perhaps sorted by date)
+    // GSI1SK: orderDate#<orderId> (Sortable key for all orders)
+    // GSI2PK: ORDER#<orderId> (For direct lookup by order ID)
+    // GSI2SK: ORDER#<orderId> (Can be same as PK or a constant like METADATA)
+    super(orderId, `CUST#${customerId}`, `ORDER#${orderId}`, 'ORDER');
     this.customerId = customerId;
-    this.country = country;
-    this.city = city;
-    this.county = county;
-    this.streetAddress = streetAddress;
+    this.orderDate = orderDate;
+    this.status = status;
     this.totalAmount = totalAmount;
-    this.status = 'PENDING';
     this.GSI1PK = 'ORDER';
-    this.GSI1SK = this.createdAt;
-    this.GSI2PK = `ORDER#${id}`;
-    this.GSI2SK = 'METADATA';
+    this.GSI1SK = `${orderDate}#${orderId}`;
+    this.GSI2PK = `ORDER#${orderId}`;
+    this.GSI2SK = `ORDER#${orderId}`;
   }
 } 

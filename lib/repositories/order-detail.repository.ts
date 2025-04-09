@@ -1,58 +1,40 @@
 import { BaseRepository } from './base.repository';
 import { OrderDetail } from '../entities/order-detail.entity';
+import { QueryCommandInput, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
+// Refactored minimally, assuming details are primarily fetched via OrderRepository
 export class OrderDetailRepository extends BaseRepository<OrderDetail> {
-  constructor() {
-    super();
-    
-    // Initialize with mock data
-    const mockOrderDetails: OrderDetail[] = [
-      new OrderDetail(
-        'ORDD1',
-        'ORD1',
-        'PROD1',
-        'Laptop Pro', // Product name
-        1,
-        999.99
-      ),
-      new OrderDetail(
-        'ORDD2',
-        'ORD1',
-        'PROD2',
-        'Wireless Mouse', // Product name
-        2,
-        29.99
-      ),
-      new OrderDetail(
-        'ORDD3',
-        'ORD2',
-        'PROD3',
-        'Gaming Keyboard', // Product name
-        1,
-        149.99
-      ),
-      new OrderDetail(
-        'ORDD4',
-        'ORD3',
-        'PROD1',
-        'Laptop Pro', // Product name
-        1,
-        999.99
-      ),
-    ];
-    
-    mockOrderDetails.forEach(detail => this.items.set(detail.id, detail));
+  constructor(tableName: string) {
+    super(tableName);
+    // Removed mock data
   }
 
+  // Method to get details by Order ID (same as in OrderRepository, but here for completeness)
   async findByOrder(orderId: string): Promise<OrderDetail[]> {
-    return Array.from(this.items.values()).filter(detail => detail.orderId === orderId);
+    const params: QueryCommandInput = {
+      TableName: this.tableName,
+      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
+      ExpressionAttributeValues: {
+        ':pk': `ORDER#${orderId}`,
+        ':skPrefix': 'DETAIL#',
+      },
+    };
+    const result = await this.client.send(new QueryCommand(params));
+    return (result.Items as OrderDetail[]) || [];
   }
 
+  // Method to get details by Product ID (using GSI1 - requires entity to have GSI1 defined)
   async findByProduct(productId: string): Promise<OrderDetail[]> {
-    return this.findByGSI1(`PROD#${productId}`, '');
-  }
-
-  async findAllOrderDetails(): Promise<OrderDetail[]> {
-    return Array.from(this.items.values());
+    // Need to ensure OrderDetail entity has GSI1PK=`PROD#<productId>` and GSI1SK=`ORDER#<orderId>` defined
+    const params: QueryCommandInput = {
+      TableName: this.tableName,
+      IndexName: 'GSI1',
+      KeyConditionExpression: 'GSI1PK = :gsi1pk',
+      ExpressionAttributeValues: {
+        ':gsi1pk': `PROD#${productId}`,
+      },
+    };
+    const result = await this.client.send(new QueryCommand(params));
+    return (result.Items as OrderDetail[]) || [];
   }
 } 

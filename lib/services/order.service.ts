@@ -1,155 +1,127 @@
-import { BaseService } from './base.service';
-import { Order } from '../entities/order.entity';
+import { Order, OrderStatus } from '../entities/order.entity';
 import { OrderDetail } from '../entities/order-detail.entity';
-import { Revenue } from '../entities/revenue.entity';
 import { OrderRepository } from '../repositories/order.repository';
-import { OrderDetailRepository } from '../repositories/order-detail.repository';
 import { CustomerRepository } from '../repositories/customer.repository';
 import { ProductRepository } from '../repositories/product.repository';
-import { RevenueRepository } from '../repositories/revenue.repository';
+import { QueryCommandInput } from '@aws-sdk/lib-dynamodb';
+import { v4 as uuid } from 'uuid';
+import { ValidationError } from '../errors/validation.error';
+import { NotFoundError } from '../errors/not-found.error';
+import { ConflictError } from '../errors/conflict.error';
+import { validateInput, CreateOrderSchema, UpdateOrderStatusSchema } from '../validation/schemas';
 
-export class OrderService extends BaseService<Order> {
-  private orderDetailRepository: OrderDetailRepository;
+// Input structure for creating order details within the service
+// interface CreateOrderDetailInput {
+//     productId: string;
+//     quantity: number;
+// }
+
+// Removed inheritance from BaseService
+export class OrderService {
+  private orderRepository: OrderRepository;
   private customerRepository: CustomerRepository;
   private productRepository: ProductRepository;
-  private revenueRepository: RevenueRepository;
 
+  // Simplified constructor with defaults for necessary repositories
   constructor(
-    repository: OrderRepository,
-    orderDetailRepository: OrderDetailRepository,
-    customerRepository: CustomerRepository,
-    productRepository: ProductRepository,
-    revenueRepository: RevenueRepository
+    orderRepository: OrderRepository = new OrderRepository(),
+    customerRepository: CustomerRepository = new CustomerRepository(),
+    productRepository: ProductRepository = new ProductRepository()
   ) {
-    super(repository);
-    this.orderDetailRepository = orderDetailRepository;
+    this.orderRepository = orderRepository;
     this.customerRepository = customerRepository;
     this.productRepository = productRepository;
-    this.revenueRepository = revenueRepository;
   }
 
-  async findByCustomer(customerId: string): Promise<Order[]> {
-    return (this.repository as OrderRepository).findByCustomer(customerId);
+  // --- Corrected Methods --- 
+
+  // Use GSI2 for direct lookup
+  async getOrderById(orderId: string): Promise<Order | null> {
+    return this.orderRepository.findOrderById_GSI2(orderId);
   }
 
-  async findByDateRange(startDate: string, endDate: string): Promise<Order[]> {
-    return (this.repository as OrderRepository).findByDateRange(startDate, endDate);
-  }
-
-  async findAllOrders(): Promise<Order[]> {
-    return (this.repository as OrderRepository).findAllOrders();
-  }
-
-  async getOrderWithDetails(orderId: string): Promise<{
-    order: Order | null;
-    details: any[];
-    customer: any | null;
-  }> {
-    const order = await this.findById(orderId);
-    if (!order) {
-      return { order: null, details: [], customer: null };
+  // Optional: Get Order with Details (can also be handled by field resolvers)
+  async getOrderWithDetails(orderId: string): Promise<(Order & { details?: OrderDetail[] }) | null> {
+    const order = await this.orderRepository.findOrderById_GSI2(orderId);
+    if (order) {
+        (order as any).details = await this.orderRepository.getOrderDetails(order.id);
     }
-
-    const details = await this.orderDetailRepository.findByOrder(orderId);
-    const customer = await this.customerRepository.findById(order.customerId);
-
-    return { order, details, customer };
-  }
-
-  async createOrder(
-    customerId: string,
-    items: { productId: string; quantity: number }[],
-    shippingAddress: {
-      country: string;
-      city: string;
-      county: string;
-      streetAddress: string;
-    }
-  ): Promise<Order> {
-    // Validate customer exists
-    const customer = await this.customerRepository.findById(customerId);
-    if (!customer) {
-      throw new Error('Customer not found');
-    }
-
-    // Generate order ID
-    const orderId = `ORD${Date.now()}`;
-
-    // Create order
-    const order = new Order(
-      orderId,
-      customerId,
-      shippingAddress.country,
-      shippingAddress.city,
-      shippingAddress.county,
-      shippingAddress.streetAddress,
-      0 // Initial total amount, will be updated later
-    );
-
-    // Save order
-    await this.repository.save(order);
-
-    // Create order details and calculate total amount
-    let totalAmount = 0;
-    for (const item of items) {
-      // Get product
-      const product = await this.productRepository.findById(item.productId);
-      if (!product) {
-        throw new Error(`Product not found: ${item.productId}`);
-      }
-
-      // Calculate item total
-      const itemTotal = product.price * item.quantity;
-      totalAmount += itemTotal;
-
-      // Create order detail
-      const orderDetailId = `ORDD${Date.now()}_${item.productId}`;
-      const orderDetail = new OrderDetail(
-        orderDetailId,
-        orderId,
-        item.productId,
-        product.name, // Include product name for denormalization
-        item.quantity,
-        product.price
-      );
-
-      // Save order detail
-      await this.orderDetailRepository.save(orderDetail);
-    }
-
-    // Update order with total amount
-    order.totalAmount = totalAmount;
-    await this.repository.save(order);
-
-    // Create revenue entry
-    const revenue = new Revenue(
-      `REV${Date.now()}`,
-      new Date().toISOString().split('T')[0], // Today's date
-      totalAmount
-    );
-    await this.revenueRepository.save(revenue);
-
     return order;
+}
+
+
+  async listOrdersByCustomer(customerId: string, limit?: number, nextToken?: string): Promise<{ items: Order[]; nextToken: string | null }> {
+    const customer = await this.customerRepository.getCustomerById(customerId);
+    if (!customer) {
+        throw new NotFoundError(`Customer with ID ${customerId} not found.`);
+    }
+    return this.orderRepository.listOrdersByCustomer(customerId, limit, nextToken);
   }
 
-  async updateOrderStatus(id: string, status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED'): Promise<Order> {
-    const order = await this.findById(id);
-    if (!order) {
-      throw new Error(`Order with ID '${id}' not found`);
+  async listAllOrders(limit?: number, nextToken?: string): Promise<{ items: Order[]; nextToken: string | null }> {
+    return this.orderRepository.listAllOrders(limit, nextToken);
+  }
+
+  async createOrder(rawInput: unknown): Promise<Order> {
+    const input = validateInput(CreateOrderSchema, rawInput);
+    const { customerId, details } = input;
+
+    if (!customerId || !details || details.length === 0) {
+      throw new ValidationError('Customer ID and at least one order detail are required');
     }
 
-    // Create a new order with updated status
-    const updatedOrder = new Order(
-      id,
-      order.customerId,
-      order.country,
-      order.city,
-      order.county,
-      order.streetAddress,
-      order.totalAmount
-    );
-    updatedOrder.status = status;
-    
-    return this.save(updatedOrder);
+    const customer = await this.customerRepository.getCustomerById(customerId);
+    if (!customer) {
+      throw new NotFoundError(`Customer with ID ${customerId} not found`);
+    }
+
+    let totalAmount = 0;
+    const orderDetailEntities: OrderDetail[] = [];
+    const orderId = uuid();
+
+    for (const detailInput of details) {
+      const product = await this.productRepository.getProductById(detailInput.productId);
+      if (!product) {
+        throw new NotFoundError(`Product with ID ${detailInput.productId} not found`);
+      }
+      
+      const lineItemPrice = product.price; 
+      totalAmount += lineItemPrice * detailInput.quantity;
+      
+      const detailId = uuid();
+      orderDetailEntities.push(
+        new OrderDetail(
+          detailId, orderId, detailInput.productId, product.name, 
+          detailInput.quantity, lineItemPrice
+        )
+      );
+    }
+
+    const newOrder = new Order(orderId, customerId, totalAmount, OrderStatus.PENDING);
+    return this.orderRepository.createOrderWithDetails(newOrder, orderDetailEntities);
   }
+
+  async updateOrderStatus(rawInput: unknown): Promise<Order | null> {
+    const input = validateInput(UpdateOrderStatusSchema, rawInput);
+    const { id, status } = input;
+
+    const orderToUpdate = await this.orderRepository.findOrderById_GSI2(id);
+    if (!orderToUpdate) {
+         throw new NotFoundError(`Order with ID ${id} not found.`);
+    }
+    const customerId = orderToUpdate.customerId;
+    
+    if (!Object.values(OrderStatus).includes(status)) {
+      throw new ValidationError(`Invalid status value: ${status}`);
+    }
+    
+    if (orderToUpdate.status === OrderStatus.DELIVERED || orderToUpdate.status === OrderStatus.CANCELLED) {
+      throw new ConflictError(`Order is already ${orderToUpdate.status} and cannot be updated.`);
+    }
+
+    return this.orderRepository.updateOrderStatus(customerId, id, status);
+  }
+
+  // --- Removed Old/Incorrect Methods ---
+  // Removed: findByCustomer, findByDateRange, findAllOrders
 } 

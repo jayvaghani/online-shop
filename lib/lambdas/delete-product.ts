@@ -1,67 +1,40 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { AppSyncEvent } from '../types/appsync';
 import { ProductService } from '../services/product.service';
-import { ProductRepository } from '../repositories/product.repository';
-import { ProductCategoryRepository } from '../repositories/product-category.repository';
-import * as path from 'path';
+import { Logger } from '@aws-lambda-powertools/logger';
+import type { Context } from 'aws-lambda';
 
-export const deleteProduct = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+const productService = new ProductService();
+const logger = new Logger({ serviceName: 'deleteProductLambda' });
+
+interface DeleteProductArgs {
+  id: string;
+}
+
+export const deleteProduct = async (
+  event: AppSyncEvent<DeleteProductArgs>,
+  context: Context
+): Promise<boolean> => {
+  logger.addContext(context);
+  logger.info('Received request for deleteProduct', { args: event.arguments });
+
   try {
-    // Extract product ID from path parameters
-    const productId = event.pathParameters?.id;
-    
-    if (!productId) {
-      return {
-        statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: 'Product ID is required' }),
-      };
+    const { id } = event.arguments;
+    if (!id) {
+      logger.warn('Missing Product ID for deletion');
+      throw new Error('Product ID is required for deletion');
     }
-    
-    // Initialize repositories
-    const productRepository = new ProductRepository();
-    const categoryRepository = new ProductCategoryRepository();
-    
-    // Initialize service with dependencies
-    const productService = new ProductService(productRepository, categoryRepository);
-    
-    // Call service method
-    await productService.deleteProduct(productId);
-    
-    // Return response
-    return {
-      statusCode: 204,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: '',
-    };
-  } catch (error) {
-    console.error('Error deleting product:', error);
-    
-    // Handle specific error cases
-    if (error instanceof Error) {
-      if (error.message.includes('Product not found')) {
-        return {
-          statusCode: 404,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: error.message }),
-        };
-      }
-    }
-    
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ message: 'Internal server error' }),
-    };
+    const result = await productService.deleteProduct(id);
+    logger.info('Successfully deleted product', { productId: id, result });
+    return result;
+  } catch (error: any) {
+    logger.error('Error processing deleteProduct request', { 
+        errorName: error.name,
+        errorMessage: error.message,
+        errorStack: error.stack, 
+        eventArguments: event.arguments 
+    });
+    throw error;
   }
 };
 
-// Add path property to the function
 deleteProduct.path = __filename;

@@ -1,0 +1,190 @@
+type Customer {
+  id: ID!
+  name: String!
+  email: String!
+  address: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+input CreateCustomerInput {
+  name: String!
+  email: String!
+  address: String!
+}
+
+input UpdateCustomerInput {
+  id: ID!
+  name: String
+  email: String # Be careful updating email due to GSI key
+  address: String
+}
+
+type CustomerConnection {
+    items: [Customer]
+    nextToken: String
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+type Order {
+  id: ID!
+  customerId: ID!
+  customer: Customer # Field resolver needed later
+  orderDate: String!
+  status: OrderStatus!
+  totalAmount: Float!
+  details: [OrderDetail] # Field resolver needed later
+  createdAt: String!
+  updatedAt: String!
+}
+
+type OrderDetail {
+  id: ID! # The unique ID of the detail item itself
+  orderId: ID!
+  productId: ID!
+  productName: String!
+  product: Product # Field resolver needed later
+  quantity: Int!
+  unitPrice: Float! # Price at time of order
+  totalPrice: Float! # Price at time of order
+}
+
+input OrderDetailInput {
+    productId: ID!
+    quantity: Int!
+    # Price might be calculated server-side based on current product price
+}
+
+input CreateOrderInput {
+  customerId: ID!
+  details: [OrderDetailInput!]!
+  # status: OrderStatus (Defaults to PENDING server-side)
+  # totalAmount: Float (Calculated server-side)
+}
+
+input UpdateOrderInput {
+    id: ID!
+    status: OrderStatus # Main updatable field
+    # Other fields less likely to be updated directly
+}
+
+type OrderConnection {
+    items: [Order]
+    nextToken: String
+}
+
+type Product {
+  id: ID!
+  name: String!
+  description: String!
+  price: Float!
+  weight: Float!
+  categoryId: ID!
+  imageUrl: String!
+  createdAt: String!
+  updatedAt: String!
+  category: ProductCategory # Field resolver needed
+}
+
+type ProductCategory {
+  id: ID!
+  name: String!
+  description: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+input CreateProductInput {
+  name: String!
+  description: String!
+  price: Float!
+  weight: Float!
+  categoryId: ID!
+  imageUrl: String!
+}
+
+input UpdateProductInput {
+  id: ID!
+  name: String
+  description: String
+  price: Float
+  weight: Float
+  categoryId: ID # Allow changing category? Consider implications.
+  imageUrl: String
+}
+
+input CreateCategoryInput {
+  name: String!
+  description: String!
+}
+
+input UpdateCategoryInput {
+  id: ID!
+  name: String
+  description: String
+}
+
+type ProductConnection {
+  items: [Product]
+  nextToken: String
+}
+
+type CategoryConnection {
+  items: [ProductCategory]
+  nextToken: String
+}
+
+type Query {
+  # Product queries
+  getProduct(id: ID!): Product
+  listProducts(limit: Int, nextToken: String): ProductConnection
+  getProductsByCategory(categoryId: ID!, limit: Int, nextToken: String): ProductConnection
+  
+  # Category queries
+  getCategory(id: ID!): ProductCategory
+  listCategories(limit: Int, nextToken: String): CategoryConnection
+
+  # Customer queries
+  getCustomer(id: ID!): Customer
+  listCustomers(limit: Int, nextToken: String): CustomerConnection
+  getCustomerByEmail(email: String!): Customer # Added for GSI lookup
+
+  # Order queries
+  getOrder(id: ID!): Order
+  listOrdersByCustomer(customerId: ID!, limit: Int, nextToken: String): OrderConnection
+  listAllOrders(limit: Int, nextToken: String): OrderConnection # Using GSI1
+}
+
+type Mutation {
+  # Product mutations
+  createProduct(input: CreateProductInput!): Product
+  updateProduct(input: UpdateProductInput!): Product
+  deleteProduct(id: ID!): Boolean
+  
+  # Category mutations
+  createCategory(input: CreateCategoryInput!): ProductCategory
+  updateCategory(input: UpdateCategoryInput!): ProductCategory
+  deleteCategory(id: ID!): Boolean
+
+  # Customer mutations
+  createCustomer(input: CreateCustomerInput!): Customer
+  updateCustomer(input: UpdateCustomerInput!): Customer
+  deleteCustomer(id: ID!): Boolean
+
+  # Order mutations
+  createOrder(input: CreateOrderInput!): Order
+  updateOrder(input: UpdateOrderInput!): Order
+  # deleteOrder(id: ID!): Boolean # Decide if orders should be deletable
+}
+
+schema {
+  query: Query
+  mutation: Mutation
+} 

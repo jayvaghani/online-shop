@@ -1,87 +1,45 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { AppSyncEvent } from '../types/appsync';
+import { Product } from '../entities/product.entity';
 import { ProductService } from '../services/product.service';
-import { ProductRepository } from '../repositories/product.repository';
-import { ProductCategoryRepository } from '../repositories/product-category.repository';
-import * as path from 'path';
+import { Logger } from '@aws-lambda-powertools/logger';
+import type { Context } from 'aws-lambda';
 
-export const createProduct = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+const productService = new ProductService();
+const logger = new Logger({ serviceName: 'createProductLambda' });
+
+// Corresponds to CreateProductInput in schema
+interface CreateProductArgs {
+  input: {
+    name: string;
+    description: string;
+    price: number;
+    weight: number;
+    categoryId: string;
+    imageUrl: string;
+  };
+}
+
+export const createProduct = async (
+  event: AppSyncEvent<CreateProductArgs>,
+  context: Context
+): Promise<Product> => {
+  logger.addContext(context);
+  logger.info('Received request for createProduct', { args: event.arguments });
+
   try {
-    // Parse request body
-    const body = JSON.parse(event.body || '{}');
-    const { name, description, price, weight, categoryId, imageUrl } = body;
-    
-    // Validate required fields
-    if (!name || !description || !price || !weight || !categoryId || !imageUrl) {
-      return {
-        statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          message: 'Missing required fields: name, description, price, weight, categoryId, imageUrl' 
-        }),
-      };
-    }
-    
-    // Initialize repositories
-    const productRepository = new ProductRepository();
-    const categoryRepository = new ProductCategoryRepository();
-    
-    // Initialize service with dependencies
-    const productService = new ProductService(productRepository, categoryRepository);
-    
-    // Call service method
-    const product = await productService.createProduct(
-      name,
-      description,
-      price,
-      weight,
-      categoryId,
-      imageUrl
-    );
-    
-    // Return response
-    return {
-      statusCode: 201,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(product),
-    };
-  } catch (error) {
-    console.error('Error creating product:', error);
-    
-    // Handle specific error cases
-    if (error instanceof Error) {
-      if (error.message.includes('Category not found')) {
-        return {
-          statusCode: 404,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: error.message }),
-        };
-      }
-      if (error.message.includes('Product with this name already exists')) {
-        return {
-          statusCode: 409,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: error.message }),
-        };
-      }
-    }
-    
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ message: 'Internal server error' }),
-    };
+    // Pass the raw input object to the service for validation
+    const result = await productService.createProduct(event.arguments.input);
+    logger.info('Successfully created product', { productId: result.id });
+    return result;
+  } catch (error: any) {
+    logger.error('Error processing createProduct request', { 
+        errorName: error.name, 
+        errorMessage: error.message, 
+        errorStack: error.stack, 
+        eventArguments: event.arguments 
+    });
+    throw error;
   }
 };
 
-// Add path property to the function
 createProduct.path = __filename; 

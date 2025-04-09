@@ -1,40 +1,45 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { AppSyncEvent } from '../types/appsync';
+import { ProductCategory } from '../entities/product-category.entity';
 import { ProductCategoryService } from '../services/product-category.service';
-import { ProductCategoryRepository } from '../repositories/product-category.repository';
-import { ProductRepository } from '../repositories/product.repository';
-import * as path from 'path';
+import { Logger } from '@aws-lambda-powertools/logger';
+import type { Context } from 'aws-lambda';
 
-export const getAllCategories = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+const categoryService = new ProductCategoryService();
+const logger = new Logger({ serviceName: 'getAllCategoriesLambda' });
+
+// Define arguments if needed (e.g., for pagination: limit, nextToken)
+interface ListCategoriesArgs {
+  limit?: number;
+  nextToken?: string;
+}
+
+// Note: AppSync expects the resolver to return the data structure matching the schema field type.
+// For listCategories, this is CategoryConnection, which has { items, nextToken }.
+export const getAllCategories = async (
+  event: AppSyncEvent<ListCategoriesArgs>,
+  context: Context
+): Promise<{ items: ProductCategory[]; nextToken: string | null }> => {
+  logger.addContext(context);
+  logger.info('Received request for getAllCategories', { args: event.arguments });
+
   try {
-    // Initialize repositories
-    const categoryRepository = new ProductCategoryRepository();
-    const productRepository = new ProductRepository();
-    
-    // Initialize service with dependencies
-    const categoryService = new ProductCategoryService(categoryRepository, productRepository);
-    
-    // Call service method
-    const categories = await categoryService.findAllCategories();
-    
-    // Return response
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(categories),
-    };
-  } catch (error) {
-    console.error('Error fetching categories:', error);
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ message: 'Internal server error' }),
-    };
-  }
-};
+    const { limit, nextToken } = event.arguments;
+    // Pass arguments to the service layer
+    const result = await categoryService.getAllCategories(limit, nextToken);
+    logger.info('Successfully fetched categories', { itemCount: result.items.length });
+    return result;
+  } catch (error: any) {
+    logger.error('Error processing getAllCategories request', { 
+        errorName: error.name, 
+        errorMessage: error.message, 
+        errorStack: error.stack, 
+        eventArguments: event.arguments 
+    });
 
-// Add path property to the function
-getAllCategories.path = __filename; 
+    // Rethrow the error for AppSync to handle
+    // AppSync automatically maps thrown errors to GraphQL errors.
+    throw error; 
+  }
+}; 
+
+getAllCategories.path = __filename

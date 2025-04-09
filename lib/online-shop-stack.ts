@@ -1,6 +1,9 @@
 import { StackProps, Stack } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { LambdaStack } from './stacks/lambda-stack';
+import { AppSyncStack } from './stacks/appsync-stack';
+import { DynamoDBStack } from './stacks/dynamodb-stack';
+import { CognitoStack } from './stacks/cognito-stack';
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
 
 export interface AppProps extends StackProps {
@@ -8,15 +11,44 @@ export interface AppProps extends StackProps {
 }
 
 export class OnlineShopStack extends Stack {
+  
+  public readonly dynamoDBStack: DynamoDBStack;
+  public readonly cognitoStack: CognitoStack;
+  public readonly lambdaStack: LambdaStack;
+  public readonly appsyncStack: AppSyncStack;
+
   constructor(scope: Construct, id: string, props: AppProps) {
     super(scope, id, props);
 
     this.tags.setTag("Owner", props.owner);
 
-    // Initialize the Lambda stack
-    new LambdaStack(this, 'LambdaStack', {
+    // Initialize the DynamoDB stack
+    this.dynamoDBStack = new DynamoDBStack(this, 'DynamoDBStack', {
       env: props?.env,
     });
+
+    // Initialize the Cognito stack
+    this.cognitoStack = new CognitoStack(this, 'CognitoStack', {
+        env: props?.env,
+    });
+
+    // Initialize the Lambda stack, passing the DynamoDB table
+    this.lambdaStack = new LambdaStack(this, 'LambdaStack', {
+      env: props?.env,
+      table: this.dynamoDBStack.table,
+    });
+
+    // Initialize the AppSync stack, passing Cognito User Pool
+    this.appsyncStack = new AppSyncStack(this, 'AppSyncStack', {
+      env: props?.env,
+      lambdaFunctions: this.lambdaStack.lambdaFunctions,
+      userPool: this.cognitoStack.userPool,
+    });
+
+    // Add dependencies
+    this.lambdaStack.addDependency(this.dynamoDBStack);
+    this.appsyncStack.addDependency(this.lambdaStack);
+    this.appsyncStack.addDependency(this.cognitoStack);
 
     // The code that defines your stack goes here
     
@@ -26,3 +58,4 @@ export class OnlineShopStack extends Stack {
     // });
   }
 }
+

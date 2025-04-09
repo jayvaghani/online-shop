@@ -1,63 +1,41 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { AppSyncEvent } from '../types/appsync';
+import { Product } from '../entities/product.entity';
 import { ProductService } from '../services/product.service';
-import { ProductRepository } from '../repositories/product.repository';
-import { ProductCategoryRepository } from '../repositories/product-category.repository';
-import * as path from 'path';
+import { Logger } from '@aws-lambda-powertools/logger';
+import type { Context } from 'aws-lambda';
 
-export const getProductById = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+const productService = new ProductService();
+const logger = new Logger({ serviceName: 'getProductByIdLambda' });
+
+interface GetProductByIdArgs {
+  id: string;
+}
+
+export const getProductById = async (
+  event: AppSyncEvent<GetProductByIdArgs>,
+  context: Context
+): Promise<Product | null> => {
+  logger.addContext(context);
+  logger.info('Received request for getProductById', { args: event.arguments });
+
   try {
-    // Extract product ID from path parameters
-    const productId = event.pathParameters?.id;
-    
-    if (!productId) {
-      return {
-        statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: 'Product ID is required' }),
-      };
+    const { id } = event.arguments; 
+    if (!id) {
+      logger.warn('Missing Product ID argument');
+      throw new Error('Product ID is required');
     }
-    
-    // Initialize repositories
-    const productRepository = new ProductRepository();
-    const categoryRepository = new ProductCategoryRepository();
-    
-    // Initialize service with dependencies
-    const productService = new ProductService(productRepository, categoryRepository);
-    
-    // Call service method
-    const result = await productService.getProductWithCategory(productId);
-    
-    if (!result.product) {
-      return {
-        statusCode: 404,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: 'Product not found' }),
-      };
-    }
-    
-    // Return response
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(result),
-    };
-  } catch (error) {
-    console.error('Error fetching product:', error);
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ message: 'Internal server error' }),
-    };
+    const result = await productService.getProductById(id);
+    logger.info('Successfully fetched product by ID', { productId: id, found: !!result });
+    return result;
+  } catch (error: any) {
+    logger.error('Error processing getProductById request', { 
+        errorName: error.name,
+        errorMessage: error.message,
+        errorStack: error.stack, 
+        eventArguments: event.arguments 
+    });
+    throw error;
   }
 };
 
-// Add path property to the function
 getProductById.path = __filename; 

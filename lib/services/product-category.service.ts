@@ -1,70 +1,95 @@
-import { BaseService } from './base.service';
-import { ProductCategory } from '../entities/product-category.entity';
 import { ProductCategoryRepository } from '../repositories/product-category.repository';
 import { ProductRepository } from '../repositories/product.repository';
+import { ProductCategory } from '../entities/product-category.entity';
+import * as uuid from 'uuid';
+import { ValidationError } from '../errors/validation.error';
+import { NotFoundError } from '../errors/not-found.error';
+import { ConflictError } from '../errors/conflict.error';
+import { validateInput, CreateCategorySchema, UpdateCategorySchema } from '../validation/schemas';
 
-export class ProductCategoryService extends BaseService<ProductCategory> {
+export class ProductCategoryService {
+  private categoryRepository: ProductCategoryRepository;
   private productRepository: ProductRepository;
 
   constructor(
-    repository: ProductCategoryRepository,
-    productRepository: ProductRepository
+    categoryRepository: ProductCategoryRepository = new ProductCategoryRepository(),
+    productRepository: ProductRepository = new ProductRepository()
   ) {
-    super(repository);
+    this.categoryRepository = categoryRepository;
     this.productRepository = productRepository;
   }
 
-  async findByName(name: string): Promise<ProductCategory | null> {
-    return (this.repository as ProductCategoryRepository).findByName(name);
+  async getCategoryById(id: string): Promise<ProductCategory | null> {
+    return this.categoryRepository.getCategoryById(id);
   }
 
-  async findAllCategories(): Promise<ProductCategory[]> {
-    return (this.repository as ProductCategoryRepository).findAllCategories();
+  async getAllCategories(limit?: number, nextToken?: string): Promise<{ items: ProductCategory[]; nextToken: string | null }> {
+    return this.categoryRepository.getAllCategories(limit, nextToken);
   }
 
-  async getCategoryWithProducts(categoryId: string): Promise<{
-    category: ProductCategory | null;
-    products: any[];
-  }> {
-    const category = await this.findById(categoryId);
-    if (!category) {
-      return { category: null, products: [] };
+  async createCategory(rawInput: unknown): Promise<ProductCategory> {
+    const input = validateInput(CreateCategorySchema, rawInput);
+    const { name, description } = input;
+
+    if (!name || !description) {
+      throw new ValidationError('Missing required category fields: name, description');
     }
+    // Optional: Check for existing category name (assumes findByName exists or uses GSI)
+    // const existing = await this.categoryRepository.getCategoryByName(name); 
+    // if (existing) {
+    //   throw new ConflictError(`Category with name "${name}" already exists.`);
+    // }
 
-    const products = await this.productRepository.findByCategory(categoryId);
-    return { category, products };
+    const categoryId = uuid.v4();
+    const newCategory = new ProductCategory(categoryId, name, description);
+    return this.categoryRepository.createCategory(newCategory);
   }
 
-  async createCategory(name: string, description: string): Promise<ProductCategory> {
-    // Check if category with the same name already exists
-    const existingCategory = await this.findByName(name);
-    if (existingCategory) {
-      throw new Error(`Category with name '${name}' already exists`);
-    }
-
-    // Generate a new ID (in a real app, this would be handled by a proper ID generator)
-    const id = Date.now().toString();
+  async updateCategory(rawInput: unknown): Promise<ProductCategory | null> {
+    const input = validateInput(UpdateCategorySchema, rawInput);
+    const { id, ...updates } = input;
     
-    const category = new ProductCategory(id, name, description);
-    return this.save(category);
+    const currentCategory = await this.categoryRepository.getCategoryById(id);
+    if (!currentCategory) {
+        throw new NotFoundError(`Category with ID ${id} not found`);
+    }
+    
+    if (Object.keys(updates).length === 0) {
+        return currentCategory; // No changes needed
+    }
+
+    // Optional: Check if new name conflicts (assumes findByName exists or uses GSI)
+    // if (updates.name && updates.name !== currentCategory.name) {
+    //   const existing = await this.categoryRepository.getCategoryByName(updates.name); 
+    //   if (existing && existing.id !== id) {
+    //     throw new ConflictError(`Category with name "${updates.name}" already exists.`);
+    //   }
+    // }
+    
+    const updateData: Partial<Omit<ProductCategory, 'id' | 'PK' | 'SK' | 'type'>> = {};
+    if (updates.name !== undefined) updateData.name = updates.name;
+    if (updates.description !== undefined) updateData.description = updates.description;
+
+    const updated = await this.categoryRepository.updateCategory(id, updateData);
+     if (!updated) {
+        throw new Error(`Update failed unexpectedly for Category ID ${id}.`);
+    }
+    return updated;
   }
 
-  async updateCategory(id: string, name: string, description: string): Promise<ProductCategory> {
-    const category = await this.findById(id);
-    if (!category) {
-      throw new Error(`Category with ID '${id}' not found`);
+  async deleteCategory(id: string): Promise<boolean> {
+    const categoryToDelete = await this.categoryRepository.getCategoryById(id);
+    if (!categoryToDelete) {
+      return true; // Idempotent
     }
 
-    // Check if the new name conflicts with an existing category
-    if (name !== category.name) {
-      const existingCategory = await this.findByName(name);
-      if (existingCategory) {
-        throw new Error(`Category with name '${name}' already exists`);
-      }
+    // Call repository method (no pagination needed, just check existence)
+    // Access the 'items' property from the result object
+    const productsResult = await this.productRepository.getProductsByCategory(id);
+    if (productsResult.items.length > 0) {
+      throw new ConflictError(`Cannot delete category "${categoryToDelete.name}" (ID: ${id}) because it contains ${productsResult.items.length} product(s).`);
     }
 
-    // Create a new category with updated fields
-    const updatedCategory = new ProductCategory(id, name, description);
-    return this.save(updatedCategory);
+    return this.categoryRepository.deleteCategory(id);
   }
 } 

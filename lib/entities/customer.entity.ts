@@ -1,35 +1,27 @@
 import { BaseEntity } from './base.entity';
+import * as uuid from 'uuid';
 
 export class Customer extends BaseEntity {
-  firstName: string;
-  lastName: string;
-  username: string;
-  password: string;  // Note: In production, this should be hashed
-  emailAddress: string;
+  name: string;
+  email: string;
+  address: string; // Simple address string for now
 
   constructor(
-    id: string,
-    firstName: string,
-    lastName: string,
-    username: string,
-    password: string,
-    emailAddress: string
+    id: string | null, // Allow null for creation, generate inside
+    name: string,
+    email: string,
+    address: string
   ) {
-    // PK: CUST#<id> - For direct customer access
-    // SK: CUST#<id> - Same as PK for direct access
-    // GSI1PK: CUST - For listing all customers
-    // GSI1SK: <username> - For username-based lookups
-    // GSI2PK: EMAIL#<emailAddress> - For email-based lookups
-    // GSI2SK: CUST#<id> - For customer identification
-    super(id, `CUST#${id}`, `CUST#${id}`, 'CUSTOMER');
-    this.firstName = firstName;
-    this.lastName = lastName;
-    this.username = username;
-    this.password = password;
-    this.emailAddress = emailAddress;
+    const customerId = id || uuid.v4();
+    // PK: CUST#<id>
+    // SK: CUST#<id> (For direct lookup)
+    // GSI1PK: CUST (To list all customers)
+    // GSI1SK: email (To lookup/ensure uniqueness by email)
+    super(customerId, `CUST#${customerId}`, `CUST#${customerId}`, 'CUSTOMER');
+    this.name = name;
+    this.email = email;
+    this.address = address;
     this.GSI1PK = 'CUST';
-    this.GSI1SK = username;
-    this.GSI2PK = `EMAIL#${emailAddress}`;
-    this.GSI2SK = `CUST#${id}`;
+    this.GSI1SK = email;
   }
 } 
