@@ -53,17 +53,7 @@ export class AppSyncStack extends cdk.Stack {
             userPool: props.userPool,
             defaultAction: appsync.UserPoolDefaultAction.ALLOW,
           }
-        },
-        additionalAuthorizationModes: [
-          {
-            authorizationType: appsync.AuthorizationType.API_KEY,
-            apiKeyConfig: {
-              name: 'OnlineShop Public API Key',
-              description: 'API Key for public access operations',
-              expires: cdk.Expiration.after(cdk.Duration.days(365))
-            }
-          }
-        ]
+        }
       },
       xrayEnabled: true,
       logConfig: {

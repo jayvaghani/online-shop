@@ -165,13 +165,24 @@ type Query {
 type Mutation {
   # Product mutations
   createProduct(input: CreateProductInput!): Product
+  @aws_auth(cognito_groups: ["Admins"])
+
   updateProduct(input: UpdateProductInput!): Product
+  @aws_auth(cognito_groups: ["Admins"])
+
   deleteProduct(id: ID!): Boolean
+  @aws_auth(cognito_groups: ["Admins"])
   
   # Category mutations
   createCategory(input: CreateCategoryInput!): ProductCategory
+  @aws_auth(cognito_groups: ["Admins"])
+
   updateCategory(input: UpdateCategoryInput!): ProductCategory
+  @aws_auth(cognito_groups: ["Admins"])
+
   deleteCategory(id: ID!): Boolean
+  @aws_auth(cognito_groups: ["Admins"])
+
 
   # Customer mutations
   createCustomer(input: CreateCustomerInput!): Customer

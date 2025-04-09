@@ -1,8 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Template, Match } from 'aws-cdk-lib/assertions';
 import { CognitoStack } from '../../lib/stacks/cognito-stack';
 
-test('Cognito Stack Creates User Pool and Client', () => {
+test('Cognito Stack Creates User Pool, Groups, and Web Client', () => {
   const app = new cdk.App();
   // Create the CognitoStack
   const stack = new CognitoStack(app, 'MyCognitoTestStack');
@@ -42,21 +42,69 @@ test('Cognito Stack Creates User Pool and Client', () => {
       },
     },
     AutoVerifiedAttributes: ['email'],
-    // Add other properties like MFA, AccountRecoverySetting if configured
+    AccountRecoverySetting: {
+      RecoveryMechanisms: Match.arrayWith([
+        Match.objectLike({ Name: 'verified_email' }),
+      ])
+    }
   });
 
-  // Assert User Pool Client is created
+  // Assert User Pool Groups are created
+  template.resourceCountIs('AWS::Cognito::UserPoolGroup', 2);
+
+  // Assert Customers Group properties
+  template.hasResourceProperties('AWS::Cognito::UserPoolGroup', {
+    GroupName: 'Customers',
+    UserPoolId: { Ref: Match.stringLikeRegexp('OnlineShopUserPool.*') },
+    Description: 'Customers group',
+  });
+
+  // Assert Admins Group properties
+  template.hasResourceProperties('AWS::Cognito::UserPoolGroup', {
+    GroupName: 'Admins',
+    UserPoolId: { Ref: Match.stringLikeRegexp('OnlineShopUserPool.*') },
+    Description: 'Admins group',
+  });
+
+  // Assert User Pool Client is created for Web App
   template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
   template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
-    ClientName: 'app-client',
-    // Check UserPoolId refers to the created User Pool
-    // UserPoolId: { Ref: stack.resolve(stack.userPool.userPoolId) }, // Use resolve to get the tokenized value
-    ExplicitAuthFlows: [
+    ClientName: 'web-app-client',
+    UserPoolId: { Ref: Match.stringLikeRegexp('OnlineShopUserPool.*') },
+    GenerateSecret: false,
+    ExplicitAuthFlows: Match.arrayWith([
+      'ALLOW_USER_PASSWORD_AUTH',
       'ALLOW_USER_SRP_AUTH',
       'ALLOW_REFRESH_TOKEN_AUTH',
-    ],
-    // Add other properties like CallbackURLs, LogoutURLs if configured
+    ]),
+    SupportedIdentityProviders: ['COGNITO'],
+    CallbackURLs: Match.arrayWith([
+      'https://your-app-domain/callback',
+      'http://localhost:3000/callback'
+    ]),
+    LogoutURLs: Match.arrayWith([
+      'https://your-app-domain/logout',
+      'http://localhost:3000/logout'
+    ]),
+    AllowedOAuthFlows: Match.arrayWith([
+      'implicit',
+      'code'
+    ]),
+    AllowedOAuthScopes: Match.arrayWith([
+      'email',
+      'openid',
+      'profile',
+      'aws.cognito.signin.user.admin'
+    ]),
+    AllowedOAuthFlowsUserPoolClient: true,
+    PreventUserExistenceErrors: 'ENABLED'
   });
+
+  // Assert Outputs
+  template.hasOutput('UserPoolId', {});
+  template.hasOutput('UserPoolClientId', {});
+  template.hasOutput('AdminGroupName', {});
+  template.hasOutput('CustomerGroupName', {});
 
   // Assert Identity Pool is created (if applicable)
   // template.resourceCountIs('AWS::Cognito::IdentityPool', 1);
