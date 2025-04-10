@@ -4,10 +4,11 @@ import { LambdaStack } from './stacks/lambda-stack';
 import { AppSyncStack } from './stacks/appsync-stack';
 import { DynamoDBStack } from './stacks/dynamodb-stack';
 import { CognitoStack } from './stacks/cognito-stack';
-// import * as sqs from 'aws-cdk-lib/aws-sqs';
+import { StepFunctionsStack } from './stacks/step-functions-stack';
 
 export interface AppProps extends StackProps {
   owner: string;
+  senderEmailAddress: string;
 }
 
 export class OnlineShopStack extends Stack {
@@ -16,6 +17,7 @@ export class OnlineShopStack extends Stack {
   public readonly cognitoStack: CognitoStack;
   public readonly lambdaStack: LambdaStack;
   public readonly appsyncStack: AppSyncStack;
+  public readonly stepFunctionsStack: StepFunctionsStack;
 
   constructor(scope: Construct, id: string, props: AppProps) {
     super(scope, id, props);
@@ -32,10 +34,18 @@ export class OnlineShopStack extends Stack {
         env: props?.env,
     });
 
+    // Initialize the Step Functions stack
+    this.stepFunctionsStack = new StepFunctionsStack(this, 'StepFunctionsStack', {
+        env: props?.env,
+        table: this.dynamoDBStack.table,
+        senderEmailAddress: props.senderEmailAddress,
+    });
+
     // Initialize the Lambda stack, passing the DynamoDB table
     this.lambdaStack = new LambdaStack(this, 'LambdaStack', {
       env: props?.env,
       table: this.dynamoDBStack.table,
+      stepFunctionStateMachineArn: this.stepFunctionsStack.orderProcessingStateMachine.stateMachineArn,
     });
 
     // Initialize the AppSync stack, passing Cognito User Pool
@@ -45,17 +55,12 @@ export class OnlineShopStack extends Stack {
       userPool: this.cognitoStack.userPool,
     });
 
-    // Add dependencies
+
     this.lambdaStack.addDependency(this.dynamoDBStack);
+    this.lambdaStack.addDependency(this.stepFunctionsStack);
     this.appsyncStack.addDependency(this.lambdaStack);
     this.appsyncStack.addDependency(this.cognitoStack);
 
-    // The code that defines your stack goes here
-    
-    // example resource
-    // const queue = new sqs.Queue(this, 'OnlineShopQueue', {
-    //   visibilityTimeout: cdk.Duration.seconds(300)
-    // });
   }
 }
 

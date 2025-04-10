@@ -4,7 +4,7 @@ import { Runtime } from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as logs from 'aws-cdk-lib/aws-logs';
-// No need for path module if using __filename from handlers
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 // Import the handler functions themselves
 import { getAllCategories } from '../lambdas/get-all-categories';
@@ -30,16 +30,13 @@ import { listAllOrders } from '../lambdas/list-all-orders';
 import { createOrder } from '../lambdas/create-order';
 import { updateOrder } from '../lambdas/update-order';
 import { getOrderDetails } from '../lambdas/get-order-details';
+import { LambdaHandlerFunction } from '../types/lambda';
 
-// Type for the imported handler functions (assuming they have name and path)
-interface LambdaHandlerFunction extends Function {
-  name: string;
-  path: string; // Assuming path was added correctly
-}
 
 // Define stack properties including the DynamoDB table
 export interface LambdaStackProps extends cdk.StackProps {
   table: dynamodb.Table;
+  stepFunctionStateMachineArn: string;
 }
 
 export class LambdaStack extends cdk.Stack {
@@ -101,6 +98,11 @@ export class LambdaStack extends cdk.Stack {
       // Add other imported handlers here
     ];
 
+
+    const startStepFunctionPermissionRequired = [
+        createOrder.name
+    ];
+
     const createdFunctions = {} as Record<keyof typeof this.lambdaFunctions, NodejsFunction>;
 
     lambdaHandlers.forEach(handlerFunc => {
@@ -123,6 +125,34 @@ export class LambdaStack extends cdk.Stack {
           sourceMap: true,
           target: 'es2022',
           externalModules: ['@aws-sdk/*'],
+          // loader: {
+          //   '.html': 'text',
+          //   '.json': 'json',
+          //   '.txt': 'text',            
+          // },
+          // commandHooks: {
+          //   beforeBundling(inputDir: string, outputDir: string): string[] {
+          //       try {
+          //           // Source directory relative to the project root or lambda entry file
+          //           const templateSourceDir = path.join(inputDir, '..', '..', 'templates');
+          //           // Destination directory inside the Lambda bundle's output
+          //           const templateDestDir = path.join(outputDir, 'templates'); // Copy to a 'templates' subdir in the bundle
+   
+          //           // Check if source exists before copying
+          //           if (fs.existsSync(templateSourceDir)) {
+          //               // Use 'cp -r' to copy the directory recursively
+          //               // Ensure quotes for paths with spaces
+          //               return [`mkdir -p "${templateDestDir}" && cp -r "${templateSourceDir}/"* "${templateDestDir}/"`];
+          //           }
+          //           return [];
+          //       } catch (error) {
+          //          console.error("Error setting up commandHooks for template copy:", error);
+          //          return [];
+          //       }
+          //   },
+          //   afterBundling(): string[] { return []; },
+          //   beforeInstall(): string[] { return []; },
+          // },
         },
         logRetention: logs.RetentionDays.ONE_WEEK,
         environment: {
@@ -134,6 +164,20 @@ export class LambdaStack extends cdk.Stack {
       props.table.grantReadWriteData(lambdaFunction);
       props.table.grant(lambdaFunction, 'dynamodb:Query');
 
+
+      if (startStepFunctionPermissionRequired.includes(handlerFunc.name)) {
+        lambdaFunction.addToRolePolicy(new iam.PolicyStatement({
+          actions: ['states:StartExecution'],
+          resources: [props.stepFunctionStateMachineArn],
+          effect: iam.Effect.ALLOW,
+        }));
+        lambdaFunction.addEnvironment( // Call method on the createOrder Lambda passed in props
+            'STATE_MACHINE_ARN',                // Set environment variable named STATE_MACHINE_ARN
+            props.stepFunctionStateMachineArn
+            //this.orderProcessingStateMachine.stateMachineArn // Use the ARN of the state machine just created
+        );
+      }
+
       // Add CloudFormation outputs
       new cdk.CfnOutput(this, `${handlerFunc.name}LogCommand`, {
         value: `aws logs tail /aws/lambda/${lambdaFunction.functionName} --follow`,
@@ -142,7 +186,7 @@ export class LambdaStack extends cdk.Stack {
       });
 
       new cdk.CfnOutput(this, `${handlerFunc.name}InvokeCommand`, {
-        value: `aws lambda invoke --function-name ${lambdaFunction.functionName} --payload '{}' response.json`,
+        value: `aws lambda invoke --function-name ${lambdaFunction.functionName} --payload '${handlerFunc.name === 'sendOrderConfirmation' ? '{"orderId": "YOUR_ORDER_ID"}' : ''}' response.json`,
         description: `Command to invoke the ${handlerFunc.name} Lambda function`,
         exportName: `${handlerFunc.name}InvokeCommand`,
       });

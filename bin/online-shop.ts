@@ -6,6 +6,8 @@ import { getOwner, getStackName } from '../lib/utils/environment';
 const app = new cdk.App();
 
 const owner = getOwner()
+const senderEmailAddress = process.env.SENDER_EMAIL_ADDRESS as string
+
 new OnlineShopStack(app, getStackName(owner), {
   /* If you don't specify 'env', this stack will be environment-agnostic.
    * Account/Region-dependent features and context lookups will not work,
@@ -18,7 +20,7 @@ new OnlineShopStack(app, getStackName(owner), {
     region: process.env.CDK_DEFAULT_REGION 
   },
   owner,
-
+  senderEmailAddress,
   /* Uncomment the next line if you know exactly what Account and Region you
    * want to deploy the stack to. */
   // env: { account: '123456789012', region: 'us-east-1' },

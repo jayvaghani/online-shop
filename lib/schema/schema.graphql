@@ -33,6 +33,15 @@ enum OrderStatus {
   CANCELLED
 }
 
+# Define ShippingAddress type for output
+type ShippingAddress {
+  street: String!
+  city: String!
+  postalCode: String!
+  country: String!
+  county: String # Added optional county field
+}
+
 type Order {
   id: ID!
   customerId: ID!
@@ -40,6 +49,7 @@ type Order {
   orderDate: String!
   status: OrderStatus!
   totalAmount: Float!
+  shippingAddress: ShippingAddress! # Added field to Order type
   details: [OrderDetail] # Field resolver needed later
   createdAt: String!
   updatedAt: String!
@@ -62,9 +72,18 @@ input OrderDetailInput {
     # Price might be calculated server-side based on current product price
 }
 
+# Define ShippingAddress input type
+input ShippingAddressInput {
+  street: String!
+  city: String!
+  postalCode: String!
+  country: String!
+  county: String # Added optional county field
+}
+
 input CreateOrderInput {
-  customerId: ID!
   details: [OrderDetailInput!]!
+  shippingAddress: ShippingAddressInput! # Added field to input type
   # status: OrderStatus (Defaults to PENDING server-side)
   # totalAmount: Float (Calculated server-side)
 }

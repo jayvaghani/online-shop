@@ -13,6 +13,7 @@ test('AppSync Stack Creates API, Schema, Resolvers, Data Sources', () => {
   const cognitoStack = new CognitoStack(app, 'MyCognitoTestStackForAppSync');
   const lambdaStack = new LambdaStack(app, 'MyLambdaTestStackForAppSync', {
     table: dynamoDbStack.table,
+    stepFunctionStateMachineArn: 'arn:aws:states:us-east-1:856284715153:stateMachine:PostOrderEmailFlow'
   });
 
   // Create the AppSyncStack

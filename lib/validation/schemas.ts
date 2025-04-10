@@ -64,14 +64,25 @@ export const UpdateProductSchema = z.object({
 });
 
 // --- Order Schemas ---
+
+// Define Shipping Address Schema
+const ShippingAddressSchema = z.object({
+  street: nonEmptyString,
+  city: nonEmptyString,
+  postalCode: nonEmptyString,
+  country: nonEmptyString, // Basic validation, could add country code list
+  county: optionalString, // Added optional county field
+});
+
 const OrderDetailInputSchema = z.object({
     productId: nonEmptyString,
     quantity: z.number().int().positive({ message: "Quantity must be a positive integer" }),
 });
 
 export const CreateOrderSchema = z.object({
-    customerId: nonEmptyString,
     details: z.array(OrderDetailInputSchema).min(1, { message: "Order must contain at least one detail item" }),
+    shippingAddress: ShippingAddressSchema, // Add the shipping address schema
+    userEmail: z.string().email()
 });
 
 // For updating order status

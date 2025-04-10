@@ -9,17 +9,28 @@ export enum OrderStatus {
   CANCELLED = 'CANCELLED',
 }
 
+// Define Shipping Address structure
+export interface ShippingAddress {
+  street: string;
+  city: string;
+  postalCode: string;
+  country: string;
+  county?: string; // Added optional county field
+}
+
 export class Order extends BaseEntity {
   customerId: string;
   orderDate: string; // ISO 8601 format
   status: OrderStatus;
   totalAmount: number;
+  shippingAddress: ShippingAddress; // Added shipping address field
   // shippingAddress: string; // Could add more details
 
   constructor(
     id: string | null,
     customerId: string,
     totalAmount: number,
+    shippingAddress: ShippingAddress, // Added to constructor
     status: OrderStatus = OrderStatus.PENDING
   ) {
     const orderId = id || uuid.v4();
@@ -35,6 +46,7 @@ export class Order extends BaseEntity {
     this.orderDate = orderDate;
     this.status = status;
     this.totalAmount = totalAmount;
+    this.shippingAddress = shippingAddress; // Assign shipping address
     this.GSI1PK = 'ORDER';
     this.GSI1SK = `${orderDate}#${orderId}`;
     this.GSI2PK = `ORDER#${orderId}`;

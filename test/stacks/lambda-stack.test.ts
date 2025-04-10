@@ -12,6 +12,7 @@ test('Lambda Stack Creates Functions with Correct Permissions', () => {
   // Create the LambdaStack, passing the table from DynamoDbStack
   const lambdaStack = new LambdaStack(app, 'MyLambdaTestStack', {
     table: dynamoDbStack.table, // Pass the actual table object
+    stepFunctionStateMachineArn: 'arn:aws:states:us-east-1:856284715153:stateMachine:PostOrderEmailFlow'
   });
 
   // Prepare the LambdaStack for assertions

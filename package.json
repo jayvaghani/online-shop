@@ -27,10 +27,13 @@
   "dependencies": {
     "@aws-cdk/aws-appsync-alpha": "^2.59.0-alpha.0",
     "@aws-lambda-powertools/logger": "^2.18.0",
+    "@aws-sdk/client-ses": "^3.782.0",
+    "@aws-sdk/client-sfn": "^3.782.0",
     "@aws-sdk/client-ssm": "^3.782.0",
     "@aws-sdk/lib-dynamodb": "^3.782.0",
     "aws-cdk-lib": "^2.188.0",
     "constructs": "^10.0.0",
+    "handlebars": "^4.7.8",
     "uuid": "^11.1.0",
     "zod": "^3.24.2"
   }
