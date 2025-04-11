@@ -1,0 +1,82 @@
+# This file is used to plan the design and deployment infrastructure of online shop.
+
+# Acceptance Criteria
+- An AppSync GraphQL API for managing products stored in a MySQL database.
+- Proper usage of TypeScript features, such as types, classes, and modules.
+- A well-organized folder structure and codebase.
+
+# Technologies
+- AWS
+- CDK
+- TypeScript
+- Node.js
+- AppSync
+- DynamoDB
+- Lambda
+- API Gateway
+- Step Functions
+- Event Bus
+
+
+
+# API
+
+# Frontend
+
+refer to the issue and suggested fix, apply it in this project.
+
+
+
+Analysis Summary:
+The project structure (Stacks, Entities, Repositories, Services, Lambdas) is well-organized and follows good separation of concerns. The use of TypeScript enhances type safety. The single-table design approach is implemented with GSIs for primary access patterns. AppSync is configured with Lambda resolvers. SDK v3 is used, and Lambda bundling excludes the runtime-provided SDK.
+
+##Potential Errors / Issues:
+
+Missing Field Resolvers: This is the most significant missing piece for full functionality. The GraphQL schema defines relationships (e.g., Order.customer, Order.details, OrderDetail.product, Product.category), but the AppSync stack (appsync-stack.ts) only configures resolvers for the main Query/Mutation fields. When a query requests these nested fields, AppSync won't know how to fetch them, resulting in null values.
+Fix: Implement field resolvers in AppSyncStack. For each field (e.g., Order.customer), create a resolver attached to that specific Type/Field (typeName: 'Order', fieldName: 'customer'). This resolver would typically use a Lambda data source (e.g., pointing to getCustomer) and utilize the $context.source (which contains the parent Order object, including customerId) to fetch the related data.
+
+Incorrect Service Method Calls (Previously Fixed): Some services were calling non-existent methods on repositories inherited from the old BaseService pattern (e.g., OrderService calling this.repository.query). These seem to have been fixed in the last steps by explicitly calling the correct methods on the injected repository instances (e.g., this.orderRepository.findOrderById_GSI2). Double-check all service methods call the correct repository methods.
+
+Revenue Aggregation Logic: The RevenueRepository.createOrUpdateRevenue and RevenueService.recordRevenue currently overwrite the revenue for a given date (PK: REV#<date>). If the requirement is to accumulate revenue daily, this logic is incorrect.
+Fix/Suggestion: Implement a read-modify-write pattern in RevenueService.recordRevenue. Fetch the existing Revenue item for the date using revenueRepository.getRevenueByDate. If it exists, add the new amount to existing.sum and use revenueRepository.updateItem (you'll need to add an updateRevenueSum method to the repo). If it doesn't exist, create a new Revenue entity and use revenueRepository.createCustomer. This often requires using DynamoDB's atomic counters or conditional updates for robustness against race conditions.
+
+Order Update Inefficiency (OrderService.updateOrderStatus): This method currently queries GSI1 and filters by id to find the order before updating. This is inefficient because it reads potentially many items just to find one.
+Fix: Use the findOrderById_GSI2 method (which uses the GSI specifically designed for direct order ID lookup) to fetch the orderToUpdate directly. This avoids the inefficient filter.
+
+Pagination Implementation: Most list* methods in repositories and services have TODO comments for pagination or return null for nextToken.
+Fix: Implement proper pagination in the repository methods using the Limit parameter and ExclusiveStartKey (obtained from result.LastEvaluatedKey after a query) from DynamoDB commands. Encode/decode the LastEvaluatedKey (e.g., using base64) to use as the nextToken.
+
+##Best Practices & Suggestions:
+
+Error Handling:
+Currently, services/lambdas mostly throw generic Error objects. Consider defining custom error classes (e.g., NotFoundError, ValidationError, AuthorizationError) to provide more context and allow AppSync or clients to handle them more specifically.
+In Lambda handlers, wrap the service call in a try...catch block, log the error details for debugging, and then re-throw the original (or a mapped custom) error. AppSync handles mapping thrown errors to GraphQL errors automatically.
+
+Input Validation:
+While basic presence checks exist, consider more robust validation (e.g., string lengths, number ranges, email regex correctness, enum value checks) potentially using a library like zod or joi, especially at the entry point (Lambda handler or beginning of service method).
+
+Security:
+Authorization: API Key authorization is simple for development but not recommended for production. Consider switching to AWS Cognito User Pools (for user authentication/authorization) or IAM authorization (for backend services or AWS resource access) in AppSyncStack. AppSync supports multiple authorization modes.
+Permissions: grantReadWriteData is broad. Consider least privilege: grant only necessary permissions (e.g., grantReadData, grantWriteData, specific actions like grantQuery, grantPutItem) if possible, although grantReadWriteData is often pragmatic for single-table CRUD Lambdas.
+
+Transactionality:
+OrderRepository.createOrderWithDetails uses BatchWriteCommand, which isn't atomic. If creating the Order and its Details must succeed or fail together, replace BatchWriteCommand with TransactWriteItemsCommand (using TransactWriteItems). This has limits and different pricing but guarantees atomicity.
+
+Testing:
+The project lacks automated tests. Add unit tests for services (mocking repositories) and integration tests for Lambda handlers (potentially using aws-sdk-client-mock for DynamoDB and invoking the handler). Consider CDK integration tests to verify stack deployments and interactions.
+
+Observability:
+X-Ray is enabled, which is good. Implement structured logging (e.g., JSON logs) within Lambda functions using a library like pino or @aws-lambda-powertools/logger to make searching and analyzing logs easier. Include correlation IDs.
+
+Configuration:
+Passing TABLE_NAME via environment variables is good. For more complex configurations, consider AWS Systems Manager Parameter Store or AWS Secrets Manager.
+
+Denormalization (OrderDetail.productName):
+The OrderDetail entity includes productName. This is denormalization, which can improve read performance (avoiding extra lookups). However, ensure this denormalized data is updated if the source (Product.name) changes, or accept that it represents the name at the time of order. If consistency is critical and updates are frequent, relying on the field resolver for OrderDetail.product might be better.
+
+Dependencies:
+Consider using dependency injection more formally (e.g., using a lightweight container or manual injection at the stack level) instead of default constructors (new ProductRepository()) within services, especially as the application grows. This improves testability.
+
+Conclusion:
+The project has a solid foundation but requires implementing the missing field resolvers for full GraphQL functionality. Addressing the revenue aggregation logic, the order update inefficiency, and implementing pagination are the next most important functional improvements. After that, focusing on best practices like error handling, security (auth), testing, and potentially transactionality for order creation will significantly enhance the robustness and maintainability of the application.
+

@@ -1,8 +1,16 @@
 *.js
 !jest.config.js
-*.d.ts
 node_modules
+dist
+coverage
+.DS_Store
 
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+.context
+.aider*
+.vscode/settings.json
+
+response.json
