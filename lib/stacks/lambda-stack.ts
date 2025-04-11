@@ -5,6 +5,8 @@ import { Construct } from 'constructs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import { LambdaHandlerFunction } from '../types/lambda';
+
 
 // Import the handler functions themselves
 import { getAllCategories } from '../lambdas/get-all-categories';
@@ -30,47 +32,49 @@ import { listAllOrders } from '../lambdas/list-all-orders';
 import { createOrder } from '../lambdas/create-order';
 import { updateOrder } from '../lambdas/update-order';
 import { getOrderDetails } from '../lambdas/get-order-details';
-import { LambdaHandlerFunction } from '../types/lambda';
 
 
-// Define stack properties including the DynamoDB table
+// Define stack properties including the DynamoDB table and SFN ARN
 export interface LambdaStackProps extends cdk.StackProps {
   table: dynamodb.Table;
   stepFunctionStateMachineArn: string;
 }
 
+// Define the type for lambda functions exposed by this stack
+type ApiLambdaFunctions = {
+  getAllCategories: NodejsFunction;
+  getCategoryById: NodejsFunction;
+  getProductsByCategory: NodejsFunction;
+  getProductById: NodejsFunction;
+  createProduct: NodejsFunction;
+  updateProduct: NodejsFunction;
+  deleteProduct: NodejsFunction;
+  getAllProducts: NodejsFunction;
+  createCategory: NodejsFunction;
+  updateCategory: NodejsFunction;
+  deleteCategory: NodejsFunction;
+  getCustomer: NodejsFunction;
+  listCustomers: NodejsFunction;
+  getCustomerByEmail: NodejsFunction;
+  createCustomer: NodejsFunction;
+  updateCustomer: NodejsFunction;
+  deleteCustomer: NodejsFunction;
+  getOrder: NodejsFunction;
+  listOrdersByCustomer: NodejsFunction;
+  listAllOrders: NodejsFunction;
+  createOrder: NodejsFunction;
+  updateOrder: NodejsFunction;
+  getOrderDetails: NodejsFunction;
+};
+
 export class LambdaStack extends cdk.Stack {
-  // Expose functions using their handler names as keys
-  public readonly lambdaFunctions: { 
-    getAllCategories: NodejsFunction;
-    getCategoryById: NodejsFunction;
-    getProductsByCategory: NodejsFunction;
-    getProductById: NodejsFunction;
-    createProduct: NodejsFunction;
-    updateProduct: NodejsFunction;
-    deleteProduct: NodejsFunction;
-    getAllProducts: NodejsFunction;
-    createCategory: NodejsFunction;
-    updateCategory: NodejsFunction;
-    deleteCategory: NodejsFunction;
-    getCustomer: NodejsFunction;
-    listCustomers: NodejsFunction;
-    getCustomerByEmail: NodejsFunction;
-    createCustomer: NodejsFunction;
-    updateCustomer: NodejsFunction;
-    deleteCustomer: NodejsFunction;
-    getOrder: NodejsFunction;
-    listOrdersByCustomer: NodejsFunction;
-    listAllOrders: NodejsFunction;
-    createOrder: NodejsFunction;
-    updateOrder: NodejsFunction;
-    getOrderDetails: NodejsFunction;
-  };
+  // Expose only API/AppSync related functions
+  public readonly lambdaFunctions: ApiLambdaFunctions;
 
   constructor(scope: Construct, id: string, props: LambdaStackProps) {
     super(scope, id, props);
 
-    // Array containing the imported handler function objects
+    // Array containing ONLY the imported handler function objects for this stack
     const lambdaHandlers: LambdaHandlerFunction[] = [
       getAllCategories,
       getCategoryById,
@@ -103,7 +107,8 @@ export class LambdaStack extends cdk.Stack {
         createOrder.name
     ];
 
-    const createdFunctions = {} as Record<keyof typeof this.lambdaFunctions, NodejsFunction>;
+    // Adjust the type for createdFunctions
+    const createdFunctions = {} as Partial<ApiLambdaFunctions>;
 
     lambdaHandlers.forEach(handlerFunc => {
       if (!handlerFunc.path || !handlerFunc.name) {
@@ -115,9 +120,9 @@ export class LambdaStack extends cdk.Stack {
       const functionId = `${handlerFunc.name}Lambda`;
 
       const lambdaFunction = new NodejsFunction(this, functionId, {
-        entry: handlerFunc.path, // Use the path property
-        handler: handlerFunc.name, // Use the name property
-        runtime: Runtime.NODEJS_22_X, // Update if needed
+        entry: handlerFunc.path,
+        handler: handlerFunc.name,
+        runtime: Runtime.NODEJS_22_X,
         memorySize: 1024,
         timeout: cdk.Duration.seconds(5),
         bundling: {
@@ -125,34 +130,6 @@ export class LambdaStack extends cdk.Stack {
           sourceMap: true,
           target: 'es2022',
           externalModules: ['@aws-sdk/*'],
-          // loader: {
-          //   '.html': 'text',
-          //   '.json': 'json',
-          //   '.txt': 'text',            
-          // },
-          // commandHooks: {
-          //   beforeBundling(inputDir: string, outputDir: string): string[] {
-          //       try {
-          //           // Source directory relative to the project root or lambda entry file
-          //           const templateSourceDir = path.join(inputDir, '..', '..', 'templates');
-          //           // Destination directory inside the Lambda bundle's output
-          //           const templateDestDir = path.join(outputDir, 'templates'); // Copy to a 'templates' subdir in the bundle
-   
-          //           // Check if source exists before copying
-          //           if (fs.existsSync(templateSourceDir)) {
-          //               // Use 'cp -r' to copy the directory recursively
-          //               // Ensure quotes for paths with spaces
-          //               return [`mkdir -p "${templateDestDir}" && cp -r "${templateSourceDir}/"* "${templateDestDir}/"`];
-          //           }
-          //           return [];
-          //       } catch (error) {
-          //          console.error("Error setting up commandHooks for template copy:", error);
-          //          return [];
-          //       }
-          //   },
-          //   afterBundling(): string[] { return []; },
-          //   beforeInstall(): string[] { return []; },
-          // },
         },
         logRetention: logs.RetentionDays.ONE_WEEK,
         environment: {
@@ -160,21 +137,20 @@ export class LambdaStack extends cdk.Stack {
         },
       });
 
-      // Grant permissions (simplified - grant read/write + query)
+      // Grant DDB permissions (Read/Write + Query)
       props.table.grantReadWriteData(lambdaFunction);
       props.table.grant(lambdaFunction, 'dynamodb:Query');
 
-
+      // Grant StartExecution permission ONLY to createOrder lambda
       if (startStepFunctionPermissionRequired.includes(handlerFunc.name)) {
         lambdaFunction.addToRolePolicy(new iam.PolicyStatement({
           actions: ['states:StartExecution'],
           resources: [props.stepFunctionStateMachineArn],
           effect: iam.Effect.ALLOW,
         }));
-        lambdaFunction.addEnvironment( // Call method on the createOrder Lambda passed in props
-            'STATE_MACHINE_ARN',                // Set environment variable named STATE_MACHINE_ARN
+        lambdaFunction.addEnvironment(
+            'STATE_MACHINE_ARN',
             props.stepFunctionStateMachineArn
-            //this.orderProcessingStateMachine.stateMachineArn // Use the ARN of the state machine just created
         );
       }
 
@@ -186,15 +162,16 @@ export class LambdaStack extends cdk.Stack {
       });
 
       new cdk.CfnOutput(this, `${handlerFunc.name}InvokeCommand`, {
-        value: `aws lambda invoke --function-name ${lambdaFunction.functionName} --payload '${handlerFunc.name === 'sendOrderConfirmation' ? '{"orderId": "YOUR_ORDER_ID"}' : ''}' response.json`,
+        value: `aws lambda invoke --function-name ${lambdaFunction.functionName} --payload '{}' response.json`,
         description: `Command to invoke the ${handlerFunc.name} Lambda function`,
         exportName: `${handlerFunc.name}InvokeCommand`,
       });
 
-      createdFunctions[handlerFunc.name as keyof typeof this.lambdaFunctions] = lambdaFunction; // Use handler name as the key
+      // Add to createdFunctions using the handler name as key
+      createdFunctions[handlerFunc.name as keyof ApiLambdaFunctions] = lambdaFunction;
     });
 
-    // Assign created functions to the public property
-    this.lambdaFunctions = createdFunctions as typeof this.lambdaFunctions;
+    // Assign created functions to the public property, ensuring type safety
+    this.lambdaFunctions = createdFunctions as ApiLambdaFunctions;
   }
 } 

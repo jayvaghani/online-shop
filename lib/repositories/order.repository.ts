@@ -2,6 +2,7 @@ import { QueryCommandInput, BatchWriteCommand, BatchWriteCommandInput, QueryComm
 import { BaseRepository } from './base.repository';
 import { Order, OrderStatus } from '../entities/order.entity';
 import { OrderDetail } from "../entities/order-detail.entity";
+import { NotFoundError } from "../errors/not-found.error";
 
 export class OrderRepository extends BaseRepository<Order> {
   constructor(tableName: string = process.env.TABLE_NAME!) {
@@ -60,7 +61,6 @@ export class OrderRepository extends BaseRepository<Order> {
         ':skPrefix': 'ORDERDETAIL#',
       },
     };
-    // Need to cast the result type correctly as BaseRepository returns T (Order)
     const result = await this.client.send(new QueryCommand(params));
     return (result.Items as OrderDetail[]) || [];
   }
@@ -152,7 +152,7 @@ export class OrderRepository extends BaseRepository<Order> {
       KeyConditionExpression: 'GSI2PK = :gsi2pk AND GSI2SK = :gsi2sk',
       ExpressionAttributeValues: {
         ':gsi2pk': `ORDER#${orderId}`,
-        ':gsi2sk': `ORDER#${orderId}` // Or METADATA if GSI2SK is constant
+        ':gsi2sk': `ORDER#${orderId}` // Assumes GSI2SK mirrors GSI2PK for orders
       },
       Limit: 1
     };
@@ -160,5 +160,51 @@ export class OrderRepository extends BaseRepository<Order> {
     return orders.length > 0 ? orders[0] : null;
   }
 
-  // deleteOrder might involve deleting details too (complex, consider just cancelling)
+  // New method to delete an order and its details
+  async deleteOrderWithDetails(orderId: string): Promise<void> {
+      const order = await this.findOrderById_GSI2(orderId);
+      if (!order) {
+          throw new NotFoundError(`Order with ID ${orderId} not found for deletion.`);
+      }
+      const customerId = order.customerId;
+
+      const details = await this.getOrderDetails(orderId);
+
+      // Corrected type: Array of WriteRequest objects
+      const deleteRequests = [];
+
+      // Add delete request for the main order item
+      deleteRequests.push({
+          DeleteRequest: {
+              Key: {
+                  PK: `CUST#${customerId}`,
+                  SK: `ORDER#${orderId}`
+              }
+          }
+      });
+
+      // Add delete requests for each detail item
+      details.forEach(detail => {
+          deleteRequests.push({
+              DeleteRequest: {
+                  Key: {
+                      PK: `ORDER#${orderId}`,
+                      SK: `ORDERDETAIL#${detail.id}`
+                  }
+              }
+          });
+      });
+
+      const batchSize = 25;
+      for (let i = 0; i < deleteRequests.length; i += batchSize) {
+          const batch = deleteRequests.slice(i, i + batchSize);
+          const params: BatchWriteCommandInput = {
+              RequestItems: {
+                  [this.tableName]: batch // batch is of type WriteRequest[]
+              }
+          };
+          await this.client.send(new BatchWriteCommand(params));
+      }
+      console.log(`Successfully deleted order ${orderId} and its ${details.length} details.`);
+  }
 } 

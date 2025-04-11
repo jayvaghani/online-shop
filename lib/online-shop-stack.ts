@@ -9,6 +9,7 @@ import { StepFunctionsStack } from './stacks/step-functions-stack';
 export interface AppProps extends StackProps {
   owner: string;
   senderEmailAddress: string;
+  approvalEmailAddress: string;
 }
 
 export class OnlineShopStack extends Stack {
@@ -39,6 +40,7 @@ export class OnlineShopStack extends Stack {
         env: props?.env,
         table: this.dynamoDBStack.table,
         senderEmailAddress: props.senderEmailAddress,
+        approvalEmailAddress: props.approvalEmailAddress,
     });
 
     // Initialize the Lambda stack, passing the DynamoDB table

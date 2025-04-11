@@ -7,6 +7,11 @@ const app = new cdk.App();
 
 const owner = getOwner()
 const senderEmailAddress = process.env.SENDER_EMAIL_ADDRESS as string
+const approvalEmailAddress = process.env.APPROVAL_EMAIL_ADDRESS as string
+
+if(!senderEmailAddress || !approvalEmailAddress) {
+  throw new Error("SENDER_EMAIL_ADDRESS and APPROVAL_EMAIL_ADDRESS must be set in ENV")
+}
 
 new OnlineShopStack(app, getStackName(owner), {
   /* If you don't specify 'env', this stack will be environment-agnostic.
@@ -21,6 +26,7 @@ new OnlineShopStack(app, getStackName(owner), {
   },
   owner,
   senderEmailAddress,
+  approvalEmailAddress,
   /* Uncomment the next line if you know exactly what Account and Region you
    * want to deploy the stack to. */
   // env: { account: '123456789012', region: 'us-east-1' },

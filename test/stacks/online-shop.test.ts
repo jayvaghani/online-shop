@@ -23,6 +23,7 @@ test('DynamoDB Table Created', () => {
   const stack = new OnlineShop.OnlineShopStack(app, 'MyTestStack',{
     owner: 'test',
     senderEmailAddress: 'test@trilogy.com',
+    approvalEmailAddress: 'test@trilogy.com'
   });
     // THEN
   const template = Template.fromStack(stack.dynamoDBStack);
