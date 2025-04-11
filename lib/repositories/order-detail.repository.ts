@@ -9,18 +9,34 @@ export class OrderDetailRepository extends BaseRepository<OrderDetail> {
     // Removed mock data
   }
 
-  // Method to get details by Order ID (same as in OrderRepository, but here for completeness)
-  async findByOrder(orderId: string): Promise<OrderDetail[]> {
-    const params: QueryCommandInput = {
-      TableName: this.tableName,
-      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
-      ExpressionAttributeValues: {
-        ':pk': `ORDER#${orderId}`,
-        ':skPrefix': 'DETAIL#',
-      },
-    };
-    const result = await this.client.send(new QueryCommand(params));
-    return (result.Items as OrderDetail[]) || [];
+  // Renamed existing findByOrder to findDetailsByOrderId and added projection
+  async findDetailsByOrderId(orderId: string): Promise<Pick<OrderDetail,"productId" | "productName" | "quantity" | "unitPrice">[]> {
+    const details: Pick<OrderDetail,"productId" | "productName" | "quantity" | "unitPrice">[] = [];
+    let exclusiveStartKey: Record<string, any> | undefined;
+
+    do {
+      const params: QueryCommandInput = {
+          TableName: this.tableName,
+          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
+          // Project only necessary fields
+          ProjectionExpression: 'productId, productName, quantity, unitPrice',
+          ExpressionAttributeValues: {
+              ':pk': `ORDER#${orderId}`,
+              // SK prefix for OrderDetail seems to be ORDERDETAIL# based on entity
+              ':skPrefix': 'ORDERDETAIL#', 
+          },
+          ExclusiveStartKey: exclusiveStartKey,
+      };
+      const command = new QueryCommand(params);
+      const data = await this.client.send(command);
+      
+      if (data.Items) {
+          details.push(...(data.Items as Pick<OrderDetail,"productId" | "productName" | "quantity" | "unitPrice">[]));
+      }
+      exclusiveStartKey = data.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+
+    return details;
   }
 
   // Method to get details by Product ID (using GSI1 - requires entity to have GSI1 defined)

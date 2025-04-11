@@ -207,4 +207,46 @@ export class OrderRepository extends BaseRepository<Order> {
       }
       console.log(`Successfully deleted order ${orderId} and its ${details.length} details.`);
   }
+
+  // Method to find orders for a specific date using GSI1, projecting only needed fields
+  // Modified to support pagination
+  async findOrdersByDate(
+      targetDate: string,
+      limit?: number,
+      nextToken?: string
+  ): Promise<{ items: Pick<Order,"id" | "customerId" | "orderDate" | "shippingAddress">[]; nextToken: string | null }> {
+    let exclusiveStartKey: Record<string, any> | undefined;
+    if (nextToken) {
+      try {
+        exclusiveStartKey = JSON.parse(Buffer.from(nextToken, 'base64').toString('utf8'));
+      } catch (e) {
+        console.error("Error decoding nextToken for findOrdersByDate:", e);
+        // Depending on desired behavior, you might throw an error or just start from the beginning
+        throw new Error("Invalid pagination token for findOrdersByDate");
+      }
+    }
+
+    const params: QueryCommandInput = {
+        TableName: this.tableName,
+        IndexName: 'GSI1',
+        KeyConditionExpression: 'GSI1PK = :gsi1pk AND begins_with(GSI1SK, :targetDate)',
+        ProjectionExpression: 'id, customerId, orderDate, shippingAddress',
+        ExpressionAttributeValues: {
+            ':gsi1pk': 'ORDER',
+            ':targetDate': targetDate
+        },
+        Limit: limit, // Pass the limit
+        ExclusiveStartKey: exclusiveStartKey,
+    };
+    const command = new QueryCommand(params);
+    const data = await this.client.send(command);
+
+    const items = (data.Items as Pick<Order,"id" | "customerId" | "orderDate" | "shippingAddress">[]) || [];
+    // Encode the LastEvaluatedKey as the nextToken for the caller
+    const newNextToken = data.LastEvaluatedKey
+        ? Buffer.from(JSON.stringify(data.LastEvaluatedKey)).toString('base64')
+        : null;
+
+    return { items, nextToken: newNextToken };
+  }
 } 

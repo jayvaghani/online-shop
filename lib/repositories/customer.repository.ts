@@ -1,4 +1,4 @@
-import { QueryCommandInput, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { QueryCommandInput, QueryCommand, BatchGetCommand, BatchGetCommandInput, BatchGetCommandOutput } from "@aws-sdk/lib-dynamodb";
 import { BaseRepository } from './base.repository';
 import { Customer } from '../entities/customer.entity';
 
@@ -92,5 +92,74 @@ export class CustomerRepository extends BaseRepository<Customer> {
     const PK = `CUST#${id}`;
     const SK = `CUST#${id}`;
     return this.deleteItem(PK, SK);
+  }
+
+  // Merged method to fetch customer names by ID using BatchGetCommand
+  async findCustomersNameByIds(customerIds: string[]): Promise<Map<string, { name: string }>> {
+    const customerMap = new Map<string, { name: string }>();
+    if (customerIds.length === 0) {
+      return customerMap;
+    }
+
+    
+    let idsToRequest = Array.from(new Set(customerIds)).map(id => ({ 
+      PK: `CUST#${id}`,
+      SK: `CUST#${id}`
+    }));
+    
+    let attempts = 0; 
+    const maxAttempts = Number.MAX_SAFE_INTEGER; 
+
+    while (idsToRequest.length > 0 && attempts < maxAttempts) {
+      attempts++;
+      const batchKeys = idsToRequest.splice(0, 100);
+      console.log(`BatchGet attempt ${attempts}: Requesting ${batchKeys.length} customer IDs...`);
+      
+      // Format keys for this batch
+      // const batchKeys = batchIds
+
+      const params: BatchGetCommandInput = {
+        RequestItems: {
+          [this.tableName]: {
+            Keys: batchKeys,
+            ProjectionExpression: 'id, #nm', 
+            ExpressionAttributeNames: { '#nm': 'name' } 
+          }
+        }
+      };
+
+      try {
+        const command = new BatchGetCommand(params);
+        const data: BatchGetCommandOutput = await this.client.send(command);
+
+        // Process responses
+        if (data.Responses && data.Responses[this.tableName]) {
+          data.Responses[this.tableName].forEach(item => {
+            if (item && item.id && item.name) { 
+              customerMap.set(item.id as string, { name: item.name as string }); 
+            } else {
+              console.warn('BatchGet: Received unexpected item structure:', item);
+            }
+          });
+        }
+
+        // Check for unprocessed keys from this batch
+        if (data.UnprocessedKeys && data.UnprocessedKeys[this.tableName] && data.UnprocessedKeys[this.tableName].Keys) {
+          const unprocessedRawKeys = data.UnprocessedKeys[this.tableName].Keys!;
+          if (unprocessedRawKeys?.length > 0) {
+              idsToRequest.push(...unprocessedRawKeys as { PK: string; SK: string }[]);
+              console.warn(`BatchGet: ${unprocessedRawKeys.length} customer IDs were unprocessed in this batch.`);
+          }
+        }
+
+      } catch (error) {
+        console.error(`Error during BatchGetCommand attempt ${attempts}:`, error);
+        // If a batch fails, consider all its IDs as unprocessed for retry
+        idsToRequest.push(...batchKeys as { PK: string; SK: string }[]);
+      }
+    } // End while loop
+
+    console.log(`BatchGet: Successfully fetched names for ${customerMap.size} customers.`);
+    return customerMap;
   }
 } 

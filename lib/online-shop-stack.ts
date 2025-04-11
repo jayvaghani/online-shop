@@ -5,11 +5,13 @@ import { AppSyncStack } from './stacks/appsync-stack';
 import { DynamoDBStack } from './stacks/dynamodb-stack';
 import { CognitoStack } from './stacks/cognito-stack';
 import { StepFunctionsStack } from './stacks/step-functions-stack';
+import { DataExportStack } from './stacks/data-export-stack';
 
 export interface AppProps extends StackProps {
   owner: string;
   senderEmailAddress: string;
   approvalEmailAddress: string;
+  dataExportNotificationEmail?: string;
 }
 
 export class OnlineShopStack extends Stack {
@@ -19,6 +21,7 @@ export class OnlineShopStack extends Stack {
   public readonly lambdaStack: LambdaStack;
   public readonly appsyncStack: AppSyncStack;
   public readonly stepFunctionsStack: StepFunctionsStack;
+  public readonly dataExportStack: DataExportStack;
 
   constructor(scope: Construct, id: string, props: AppProps) {
     super(scope, id, props);
@@ -28,6 +31,13 @@ export class OnlineShopStack extends Stack {
     // Initialize the DynamoDB stack
     this.dynamoDBStack = new DynamoDBStack(this, 'DynamoDBStack', {
       env: props?.env,
+    });
+
+    // Initialize the Data Export stack
+    this.dataExportStack = new DataExportStack(this, 'DataExportStack', {
+      env: props?.env,
+      table: this.dynamoDBStack.table,
+      notificationEmail: props.dataExportNotificationEmail,
     });
 
     // Initialize the Cognito stack
@@ -62,6 +72,9 @@ export class OnlineShopStack extends Stack {
     this.lambdaStack.addDependency(this.stepFunctionsStack);
     this.appsyncStack.addDependency(this.lambdaStack);
     this.appsyncStack.addDependency(this.cognitoStack);
+
+    // Add dependency for DataExportStack if needed (e.g., if it depends on DynamoDB)
+    this.dataExportStack.addDependency(this.dynamoDBStack);
 
   }
 }
